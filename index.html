@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.2
+  OWMS ダッシュボード v1.3
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -14,6 +14,9 @@
   変更点（v1.1 → v1.2）：
     ・タブの並び順を 総合／ボイトレ系／DTM系／スクール関連／その他ブログ に変更
       （「スクール関連」と「DTM系」の順序を入れ替え）。
+  変更点（v1.2 → v1.3）：
+    ・画面タイトルの横にバージョン番号を表示するように変更（コメントだけでなく、
+      画面上で見えるようにした）。
 -->
 <style>
   :root {
@@ -52,6 +55,13 @@
     font-weight: normal;
   }
   header p.sub { color: var(--text-muted); margin: 0; font-size: 14px; }
+  header .version-tag {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: normal;
+    vertical-align: middle;
+    margin-left: 10px;
+  }
 
   .period-bar {
     display: flex;
@@ -130,7 +140,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード</h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.3</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
