@@ -17,6 +17,11 @@
   変更点（v1.2 → v1.3）：
     ・画面タイトルの横にバージョン番号を表示するように変更（コメントだけでなく、
       画面上で見えるようにした）。
+  変更点（v1.3 → v1.4）：
+    ・期間（当日／7日間／1ヶ月など）ごとにデータを15分間キャッシュするように変更。
+      一度見た期間を選び直したときは、15分以内であればGASへ問い合わせずに
+      直前のデータをそのまま表示する（表示が速くなる／GAS・GA4呼び出し回数が減る）。
+      15分を過ぎたら自動的に取り直す。
 -->
 <style>
   :root {
@@ -140,7 +145,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.3</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.4</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -191,50 +196,81 @@
   // 起動時デフォルトは「総合」
   let currentCategory = "総合";
 
-  // 直近で取得した全カテゴリー分のデータをここに保持する。
+  // 直近で取得した「今表示中の期間」の全カテゴリー分データ。
   // タブ切替はここから出し分けるだけで、GASへは再アクセスしない。
   let categoriesCache = null;
+
+  // 期間ごとのキャッシュ本体。
+  // キー：期間の値（例："7daysAgo"）、値：{ timestamp, activeUsers, categories }
+  // 同じ期間を選び直したとき、CACHE_TTL_MS以内ならGASへ行かずこれを使う。
+  const periodCache = {};
+  const CACHE_TTL_MS = 15 * 60 * 1000; // 15分間はキャッシュを使う
 
   function currentPeriod() {
     return document.getElementById("period").value;
   }
 
-  async function loadActiveUsers() {
+  function applyActiveUsers(value) {
     const el = document.getElementById("activeUsersValue");
-    el.textContent = "読み込み中…";
-    el.classList.add("loading");
-    try {
-      const url = GAS_URL + "?type=activeUsers&start=" + currentPeriod() + "&end=today";
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.ok) {
-        el.textContent = Number(data.activeUsers).toLocaleString() + " 人";
-        el.classList.remove("loading");
-      } else {
-        el.textContent = "取得エラー";
-      }
-    } catch (err) {
-      el.textContent = "通信エラー";
-      console.error(err);
-    }
+    el.textContent = Number(value).toLocaleString() + " 人";
+    el.classList.remove("loading");
   }
 
-  // 期間が変わったとき・初回読み込み時だけ呼ぶ。
-  // GA4への問い合わせをここで1回だけ行い、全カテゴリー分をcategoriesCacheに保存する。
-  async function loadAllCategories() {
+  // 期間プルダウンの変更時・初回読み込み時に呼ぶ。
+  // キャッシュが新しければそれを使い、古い／無ければGASへ1回だけ問い合わせて
+  // アクティブユーザー数＋全カテゴリー分をまとめて取得し、periodCacheに保存する。
+  async function loadForPeriod() {
+    const period = currentPeriod();
+    const cached = periodCache[period];
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+      // キャッシュがまだ新しい → GASへ行かずそのまま使う
+      applyActiveUsers(cached.activeUsers);
+      categoriesCache = cached.categories;
+      renderRanking();
+      return;
+    }
+
+    // キャッシュが無い、または古い → GASへ問い合わせ直す
+    const activeUsersEl = document.getElementById("activeUsersValue");
+    activeUsersEl.textContent = "読み込み中…";
+    activeUsersEl.classList.add("loading");
+
     const body = document.getElementById("rankingBody");
     body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
+
     try {
-      const url = GAS_URL + "?type=allCategories&start=" + currentPeriod() + "&end=today";
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.ok) {
-        categoriesCache = data.categories;
+      const [activeUsersRes, categoriesRes] = await Promise.all([
+        fetch(GAS_URL + "?type=activeUsers&start=" + period + "&end=today"),
+        fetch(GAS_URL + "?type=allCategories&start=" + period + "&end=today"),
+      ]);
+      const activeUsersData = await activeUsersRes.json();
+      const categoriesData = await categoriesRes.json();
+
+      if (activeUsersData.ok) {
+        applyActiveUsers(activeUsersData.activeUsers);
+      } else {
+        activeUsersEl.textContent = "取得エラー";
+      }
+
+      if (categoriesData.ok) {
+        categoriesCache = categoriesData.categories;
         renderRanking();
       } else {
-        body.innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
+        body.innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + categoriesData.error + '</td></tr>';
+      }
+
+      // 両方成功したときだけ、この期間のキャッシュとして保存する
+      if (activeUsersData.ok && categoriesData.ok) {
+        periodCache[period] = {
+          timestamp: now,
+          activeUsers: activeUsersData.activeUsers,
+          categories: categoriesData.categories,
+        };
       }
     } catch (err) {
+      activeUsersEl.textContent = "通信エラー";
       body.innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
       console.error(err);
     }
@@ -274,12 +310,10 @@
   });
 
   document.getElementById("period").addEventListener("change", () => {
-    loadActiveUsers();
-    loadAllCategories(); // 期間が変わった時だけGASへ問い合わせ直す
+    loadForPeriod(); // キャッシュが新しければGASへ行かず、古ければ取り直す
   });
 
-  loadActiveUsers();
-  loadAllCategories();
+  loadForPeriod();
 </script>
 
 </body>
