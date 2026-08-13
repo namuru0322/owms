@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.6
+  OWMS ダッシュボード v1.7
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -30,6 +30,11 @@
       タブ表示順を 総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ に更新。
       （GAS側 v1.7 に対応。並び順はいまのところPV順のまま。公開日順にしたい場合は
       別途対応が必要）
+  変更点（v1.6 → v1.7）：
+    ・アクティブユーザー数とカテゴリー一括取得を同時に2本（Promise.all）投げていたのを、
+      1本ずつ順番に投げる方式に変更。同時に2本投げるとGASのウェブアプリ側で
+      タイミングによって詰まり、「読み込み中」のまま止まって最終的に通信エラーに
+      なる不具合があったため。
 -->
 <style>
   :root {
@@ -153,7 +158,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.6</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.7</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -226,8 +231,12 @@
   }
 
   // 期間プルダウンの変更時・初回読み込み時に呼ぶ。
-  // キャッシュが新しければそれを使い、古い／無ければGASへ1回だけ問い合わせて
-  // アクティブユーザー数＋全カテゴリー分をまとめて取得し、periodCacheに保存する。
+  // キャッシュが新しければそれを使い、古い／無ければGASへ問い合わせて
+  // アクティブユーザー数＋全カテゴリー分を取得し、periodCacheに保存する。
+  //
+  // 注意：アクティブユーザー数とカテゴリー一括取得を「同時に2本」投げると
+  // GASのウェブアプリ側でタイミングによって詰まり、通信エラーになる不具合が
+  // あったため、v1.7で「1本ずつ順番に」投げる方式に変更した。
   async function loadForPeriod() {
     const period = currentPeriod();
     const cached = periodCache[period];
@@ -249,39 +258,45 @@
     const body = document.getElementById("rankingBody");
     body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
 
-    try {
-      const [activeUsersRes, categoriesRes] = await Promise.all([
-        fetch(GAS_URL + "?type=activeUsers&start=" + period + "&end=today"),
-        fetch(GAS_URL + "?type=allCategories&start=" + period + "&end=today"),
-      ]);
-      const activeUsersData = await activeUsersRes.json();
-      const categoriesData = await categoriesRes.json();
+    let activeUsersData = null;
+    let categoriesData = null;
 
+    // ① アクティブユーザー数を先に取得
+    try {
+      const res = await fetch(GAS_URL + "?type=activeUsers&start=" + period + "&end=today");
+      activeUsersData = await res.json();
       if (activeUsersData.ok) {
         applyActiveUsers(activeUsersData.activeUsers);
       } else {
         activeUsersEl.textContent = "取得エラー";
       }
+    } catch (err) {
+      activeUsersEl.textContent = "通信エラー";
+      console.error("activeUsers取得失敗:", err);
+    }
 
+    // ② 続けてカテゴリー一括分を取得（①が終わってから投げる）
+    try {
+      const res = await fetch(GAS_URL + "?type=allCategories&start=" + period + "&end=today");
+      categoriesData = await res.json();
       if (categoriesData.ok) {
         categoriesCache = categoriesData.categories;
         renderRanking();
       } else {
         body.innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + categoriesData.error + '</td></tr>';
       }
-
-      // 両方成功したときだけ、この期間のキャッシュとして保存する
-      if (activeUsersData.ok && categoriesData.ok) {
-        periodCache[period] = {
-          timestamp: now,
-          activeUsers: activeUsersData.activeUsers,
-          categories: categoriesData.categories,
-        };
-      }
     } catch (err) {
-      activeUsersEl.textContent = "通信エラー";
       body.innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
-      console.error(err);
+      console.error("allCategories取得失敗:", err);
+    }
+
+    // 両方成功したときだけ、この期間のキャッシュとして保存する
+    if (activeUsersData && activeUsersData.ok && categoriesData && categoriesData.ok) {
+      periodCache[period] = {
+        timestamp: now,
+        activeUsers: activeUsersData.activeUsers,
+        categories: categoriesData.categories,
+      };
     }
   }
 
