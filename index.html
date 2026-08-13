@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.5
+  OWMS ダッシュボード v1.6
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -24,6 +24,12 @@
       15分を過ぎたら自動的に取り直す。
   変更点（v1.4 → v1.5）：
     ・キャッシュ有効期間を5分→15分に変更。
+  変更点（v1.5 → v1.6）：
+    ・新カテゴリー「NEW」を追加。6年ぶりの更新再開（2026年5/28〜）以降に公開された
+      記事だけを集めたタブ。判定はGAS側で記事URL末尾の数字ID（32395以上）で行う。
+      タブ表示順を 総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ に更新。
+      （GAS側 v1.7 に対応。並び順はいまのところPV順のまま。公開日順にしたい場合は
+      別途対応が必要）
 -->
 <style>
   :root {
@@ -147,7 +153,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.5</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.6</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -170,9 +176,10 @@
   </div>
 </div>
 
-<!-- 並び順：総合／ボイトレ系／DTM系／スクール関連／その他ブログ -->
+<!-- 並び順：総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ -->
 <div class="tabs" id="tabs">
   <div class="tab active" data-category="総合">総合</div>
+  <div class="tab" data-category="NEW">NEW</div>
   <div class="tab" data-category="ボイトレ系">ボイトレ系</div>
   <div class="tab" data-category="DTM系">DTM系</div>
   <div class="tab" data-category="スクール関連">スクール関連</div>
