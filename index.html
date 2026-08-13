@@ -3,6 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
+<!--
+  OWMS ダッシュボード v1.2
+  変更点（初版 → v1.1）：
+    ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
+      「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
+      （GAS側 v1.6 の type=allCategories に対応）
+    ・「総合」タブを新設し、起動時デフォルトで表示するように変更。
+    ・タブの並び順を 総合／ボイトレ系／スクール関連／DTM系／その他ブログ に変更。
+  変更点（v1.1 → v1.2）：
+    ・タブの並び順を 総合／ボイトレ系／DTM系／スクール関連／その他ブログ に変更
+      （「スクール関連」と「DTM系」の順序を入れ替え）。
+-->
 <style>
   :root {
     --bg: #1c2230;
@@ -141,11 +153,13 @@
   </div>
 </div>
 
+<!-- 並び順：総合／ボイトレ系／DTM系／スクール関連／その他ブログ -->
 <div class="tabs" id="tabs">
-  <div class="tab active" data-category="DTM系">DTM系</div>
+  <div class="tab active" data-category="総合">総合</div>
   <div class="tab" data-category="ボイトレ系">ボイトレ系</div>
-  <div class="tab" data-category="その他ブログ">その他ブログ</div>
+  <div class="tab" data-category="DTM系">DTM系</div>
   <div class="tab" data-category="スクール関連">スクール関連</div>
+  <div class="tab" data-category="その他ブログ">その他ブログ</div>
 </div>
 
 <table>
@@ -164,7 +178,12 @@
 <script>
   const GAS_URL = "https://script.google.com/macros/s/AKfycbw4tle8lv9iQdM6F2gmlUUuILh4owSHaYSk9_8WX_d2h3tOzpHD8JFjTS9oiQs9Hkh_/exec";
 
-  let currentCategory = "DTM系";
+  // 起動時デフォルトは「総合」
+  let currentCategory = "総合";
+
+  // 直近で取得した全カテゴリー分のデータをここに保持する。
+  // タブ切替はここから出し分けるだけで、GASへは再アクセスしない。
+  let categoriesCache = null;
 
   function currentPeriod() {
     return document.getElementById("period").value;
@@ -190,26 +209,18 @@
     }
   }
 
-  async function loadRanking() {
+  // 期間が変わったとき・初回読み込み時だけ呼ぶ。
+  // GA4への問い合わせをここで1回だけ行い、全カテゴリー分をcategoriesCacheに保存する。
+  async function loadAllCategories() {
     const body = document.getElementById("rankingBody");
     body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
     try {
-      const url = GAS_URL + "?type=category&category=" + encodeURIComponent(currentCategory) + "&start=" + currentPeriod() + "&end=today";
+      const url = GAS_URL + "?type=allCategories&start=" + currentPeriod() + "&end=today";
       const res = await fetch(url);
       const data = await res.json();
-      if (data.ok && data.data.length > 0) {
-        body.innerHTML = data.data.slice(0, 30).map((item, i) => `
-          <tr>
-            <td class="rank">${i + 1}</td>
-            <td class="title">
-              <a href="https://www.ones-will.com${item.path}" target="_blank">${item.title}</a>
-              <div class="path">${item.path}</div>
-            </td>
-            <td class="pv">${item.pv.toLocaleString()}</td>
-          </tr>
-        `).join("");
-      } else if (data.ok) {
-        body.innerHTML = '<tr><td colspan="3" class="status">この期間・カテゴリーのデータはありません</td></tr>';
+      if (data.ok) {
+        categoriesCache = data.categories;
+        renderRanking();
       } else {
         body.innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
       }
@@ -219,22 +230,46 @@
     }
   }
 
+  // タブ切替時はこちらだけを呼ぶ。GASへは一切アクセスしない。
+  function renderRanking() {
+    const body = document.getElementById("rankingBody");
+    if (!categoriesCache) {
+      body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
+      return;
+    }
+    const items = categoriesCache[currentCategory] || [];
+    if (items.length > 0) {
+      body.innerHTML = items.slice(0, 30).map((item, i) => `
+        <tr>
+          <td class="rank">${i + 1}</td>
+          <td class="title">
+            <a href="https://www.ones-will.com${item.path}" target="_blank">${item.title}</a>
+            <div class="path">${item.path}</div>
+          </td>
+          <td class="pv">${item.pv.toLocaleString()}</td>
+        </tr>
+      `).join("");
+    } else {
+      body.innerHTML = '<tr><td colspan="3" class="status">この期間・カテゴリーのデータはありません</td></tr>';
+    }
+  }
+
   document.getElementById("tabs").addEventListener("click", (e) => {
     const tab = e.target.closest(".tab");
     if (!tab) return;
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     currentCategory = tab.dataset.category;
-    loadRanking();
+    renderRanking(); // キャッシュから出し分けるだけ。GASは呼ばない。
   });
 
   document.getElementById("period").addEventListener("change", () => {
     loadActiveUsers();
-    loadRanking();
+    loadAllCategories(); // 期間が変わった時だけGASへ問い合わせ直す
   });
 
   loadActiveUsers();
-  loadRanking();
+  loadAllCategories();
 </script>
 
 </body>
