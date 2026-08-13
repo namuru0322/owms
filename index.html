@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.7
+  OWMS ダッシュボード v1.8
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -28,13 +28,19 @@
     ・新カテゴリー「NEW」を追加。6年ぶりの更新再開（2026年5/28〜）以降に公開された
       記事だけを集めたタブ。判定はGAS側で記事URL末尾の数字ID（32395以上）で行う。
       タブ表示順を 総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ に更新。
-      （GAS側 v1.7 に対応。並び順はいまのところPV順のまま。公開日順にしたい場合は
-      別途対応が必要）
   変更点（v1.6 → v1.7）：
     ・アクティブユーザー数とカテゴリー一括取得を同時に2本（Promise.all）投げていたのを、
       1本ずつ順番に投げる方式に変更。同時に2本投げるとGASのウェブアプリ側で
       タイミングによって詰まり、「読み込み中」のまま止まって最終的に通信エラーに
       なる不具合があったため。
+  変更点（v1.7 → v1.8）：
+    ・ダッシュボード最上部に「サイト全体PV推移」の縦棒グラフを追加。
+      専用の期間プルダウン（7日／2週間／1ヶ月／3ヶ月、デフォルト7日）で切替可能。
+    ・その下に「カテゴリーランキング推移（1〜10位）」の線グラフを追加。
+      今選んでいるタブの1〜10位の記事について、日別PV推移を表示。
+      各記事の線はチェックボックスでON/OFF可能、グラフ全体も表示/非表示を切替可能。
+    ・グラフは外部ライブラリを使わず、素のSVGで実装（依存を増やさないため）。
+    ・GAS側 v1.8（type=dailyPV, type=pageTrend を新設）に対応。
 -->
 <style>
   :root {
@@ -152,15 +158,127 @@
   td.title a:hover { color: var(--accent); }
 
   .status { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
+
+  /* ここから：グラフセクション用 */
+  .chart-section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+  }
+  .chart-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .chart-section-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+  }
+  .chart-controls { display: flex; align-items: center; gap: 10px; }
+  .chart-toggle-btn {
+    background: var(--panel-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .chart-toggle-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+
+  .chart-svg-wrap { width: 100%; overflow-x: auto; }
+  .chart-svg-wrap svg { width: 100%; height: auto; display: block; }
+  .chart-svg-wrap.hidden { display: none; }
+
+  .bar-rect { fill: var(--accent); }
+  .bar-rect:hover { fill: #f0bd6a; }
+  .axis-line { stroke: var(--border); stroke-width: 1; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .grid-label { fill: var(--text-muted); font-size: 10px; }
+
+  .trend-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 14px;
+  }
+  .trend-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    max-width: 260px;
+  }
+  .trend-legend-item input { accent-color: var(--accent); cursor: pointer; }
+  .trend-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .trend-legend-item .legend-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .trend-legend-item.off { opacity: 0.4; }
+
+  .chart-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
 </style>
 </head>
 <body>
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.7</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.8</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
+
+<!-- ① サイト全体PV推移（縦棒グラフ） -->
+<div class="chart-section">
+  <div class="chart-section-header">
+    <h2>サイト全体PV推移</h2>
+    <div class="chart-controls">
+      <select id="pvBarPeriod">
+        <option value="7daysAgo" selected>7日</option>
+        <option value="14daysAgo">2週間</option>
+        <option value="30daysAgo">1ヶ月</option>
+        <option value="90daysAgo">3ヶ月</option>
+      </select>
+    </div>
+  </div>
+  <div class="chart-svg-wrap" id="pvBarWrap">
+    <div class="chart-empty" id="pvBarEmpty">読み込み中…</div>
+    <svg id="pvBarSvg" viewBox="0 0 1000 260" style="display:none;"></svg>
+  </div>
+</div>
+
+<!-- ② カテゴリーランキング推移（線グラフ、1〜10位） -->
+<div class="chart-section">
+  <div class="chart-section-header">
+    <h2>カテゴリーランキング推移（1〜10位）</h2>
+    <div class="chart-controls">
+      <button class="chart-toggle-btn" id="trendToggleBtn">非表示にする</button>
+    </div>
+  </div>
+  <div id="trendBody">
+    <div class="trend-legend" id="trendLegend"></div>
+    <div class="chart-svg-wrap" id="trendWrap">
+      <div class="chart-empty" id="trendEmpty">読み込み中…</div>
+      <svg id="trendSvg" viewBox="0 0 1000 300" style="display:none;"></svg>
+    </div>
+  </div>
+</div>
 
 <div class="period-bar">
   <label for="period">期間</label>
@@ -214,11 +332,20 @@
   // タブ切替はここから出し分けるだけで、GASへは再アクセスしない。
   let categoriesCache = null;
 
-  // 期間ごとのキャッシュ本体。
-  // キー：期間の値（例："7daysAgo"）、値：{ timestamp, activeUsers, categories }
-  // 同じ期間を選び直したとき、CACHE_TTL_MS以内ならGASへ行かずこれを使う。
+  // 期間ごとのキャッシュ本体（アクティブユーザー数＋カテゴリー一括分）。
   const periodCache = {};
   const CACHE_TTL_MS = 15 * 60 * 1000; // 15分間はキャッシュを使う
+
+  // 棒グラフ用のキャッシュ（期間ごと）
+  const barCache = {};
+  // 線グラフ用のキャッシュ（カテゴリー＋期間ごと）
+  const trendCache = {};
+
+  // 線グラフの色パレット（1〜10位に順番に割り当てる）
+  const TREND_COLORS = [
+    '#e0a94a', '#5aa9e6', '#7bc47f', '#e6799a', '#c792ea',
+    '#f2c14e', '#4dd0c9', '#ff8c69', '#9fa8da', '#f06a6a'
+  ];
 
   function currentPeriod() {
     return document.getElementById("period").value;
@@ -230,27 +357,30 @@
     el.classList.remove("loading");
   }
 
+  // ============================================================
+  // 既存：アクティブユーザー数＋カテゴリー一括ランキング
+  // ============================================================
+
   // 期間プルダウンの変更時・初回読み込み時に呼ぶ。
   // キャッシュが新しければそれを使い、古い／無ければGASへ問い合わせて
   // アクティブユーザー数＋全カテゴリー分を取得し、periodCacheに保存する。
   //
   // 注意：アクティブユーザー数とカテゴリー一括取得を「同時に2本」投げると
   // GASのウェブアプリ側でタイミングによって詰まり、通信エラーになる不具合が
-  // あったため、v1.7で「1本ずつ順番に」投げる方式に変更した。
+  // あったため、1本ずつ順番に投げる方式にしている。他のグラフ用リクエストも
+  // 同じ理由で、必ずこの後に続けて（同時にではなく）呼ぶようにする。
   async function loadForPeriod() {
     const period = currentPeriod();
     const cached = periodCache[period];
     const now = Date.now();
 
     if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
-      // キャッシュがまだ新しい → GASへ行かずそのまま使う
       applyActiveUsers(cached.activeUsers);
       categoriesCache = cached.categories;
       renderRanking();
       return;
     }
 
-    // キャッシュが無い、または古い → GASへ問い合わせ直す
     const activeUsersEl = document.getElementById("activeUsersValue");
     activeUsersEl.textContent = "読み込み中…";
     activeUsersEl.classList.add("loading");
@@ -261,7 +391,6 @@
     let activeUsersData = null;
     let categoriesData = null;
 
-    // ① アクティブユーザー数を先に取得
     try {
       const res = await fetch(GAS_URL + "?type=activeUsers&start=" + period + "&end=today");
       activeUsersData = await res.json();
@@ -275,7 +404,6 @@
       console.error("activeUsers取得失敗:", err);
     }
 
-    // ② 続けてカテゴリー一括分を取得（①が終わってから投げる）
     try {
       const res = await fetch(GAS_URL + "?type=allCategories&start=" + period + "&end=today");
       categoriesData = await res.json();
@@ -290,7 +418,6 @@
       console.error("allCategories取得失敗:", err);
     }
 
-    // 両方成功したときだけ、この期間のキャッシュとして保存する
     if (activeUsersData && activeUsersData.ok && categoriesData && categoriesData.ok) {
       periodCache[period] = {
         timestamp: now,
@@ -324,20 +451,311 @@
     }
   }
 
-  document.getElementById("tabs").addEventListener("click", (e) => {
+  document.getElementById("tabs").addEventListener("click", async (e) => {
     const tab = e.target.closest(".tab");
     if (!tab) return;
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     currentCategory = tab.dataset.category;
     renderRanking(); // キャッシュから出し分けるだけ。GASは呼ばない。
+    await loadTrendChart(); // タブが変わったので、1〜10位の線グラフも更新する
   });
 
-  document.getElementById("period").addEventListener("change", () => {
-    loadForPeriod(); // キャッシュが新しければGASへ行かず、古ければ取り直す
+  document.getElementById("period").addEventListener("change", async () => {
+    await loadForPeriod();
+    await loadTrendChart(); // 線グラフの期間も、この期間プルダウンに連動している
   });
 
-  loadForPeriod();
+  // ============================================================
+  // ① サイト全体PV推移（縦棒グラフ）
+  // ============================================================
+
+  function currentBarPeriod() {
+    return document.getElementById("pvBarPeriod").value;
+  }
+
+  async function loadPvBarChart() {
+    const period = currentBarPeriod();
+    const cached = barCache[period];
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+      renderPvBarChart(cached.data);
+      return;
+    }
+
+    const emptyEl = document.getElementById("pvBarEmpty");
+    const svgEl = document.getElementById("pvBarSvg");
+    emptyEl.textContent = "読み込み中…";
+    emptyEl.style.display = "block";
+    svgEl.style.display = "none";
+
+    try {
+      const res = await fetch(GAS_URL + "?type=dailyPV&start=" + period + "&end=today");
+      const data = await res.json();
+      if (data.ok) {
+        barCache[period] = { timestamp: now, data: data.data };
+        renderPvBarChart(data.data);
+      } else {
+        emptyEl.textContent = "取得エラー: " + data.error;
+      }
+    } catch (err) {
+      emptyEl.textContent = "通信エラーが発生しました";
+      console.error("dailyPV取得失敗:", err);
+    }
+  }
+
+  // 'YYYYMMDD' → 'M/D' の表示用に変換
+  function formatDateLabel(yyyymmdd) {
+    const m = parseInt(yyyymmdd.substring(4, 6), 10);
+    const d = parseInt(yyyymmdd.substring(6, 8), 10);
+    return m + "/" + d;
+  }
+
+  function renderPvBarChart(data) {
+    const emptyEl = document.getElementById("pvBarEmpty");
+    const svgEl = document.getElementById("pvBarSvg");
+
+    if (!data || data.length === 0) {
+      emptyEl.textContent = "この期間のデータはありません";
+      emptyEl.style.display = "block";
+      svgEl.style.display = "none";
+      return;
+    }
+
+    emptyEl.style.display = "none";
+    svgEl.style.display = "block";
+
+    const width = 1000, height = 260;
+    const padLeft = 46, padRight = 10, padTop = 16, padBottom = 34;
+    const chartW = width - padLeft - padRight;
+    const chartH = height - padTop - padBottom;
+
+    const maxPv = Math.max(...data.map(d => d.pv), 1);
+    const yMax = Math.ceil(maxPv * 1.15 / 5) * 5 || 5;
+
+    const n = data.length;
+    const gap = n > 40 ? 1 : (n > 14 ? 2 : 6);
+    const barW = Math.max((chartW - gap * (n - 1)) / n, 1);
+
+    // ラベルを何本ごとに出すか（多すぎると重なるので間引く）
+    let labelStep = 1;
+    if (n > 60) labelStep = 10;
+    else if (n > 30) labelStep = 5;
+    else if (n > 14) labelStep = 2;
+
+    let svg = '';
+
+    // Y軸グリッド線（4分割）
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round(yMax * i / 4);
+      const y = padTop + chartH - (chartH * i / 4);
+      svg += `<line class="axis-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" />`;
+      svg += `<text class="grid-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${val.toLocaleString()}</text>`;
+    }
+
+    // 棒
+    data.forEach((d, i) => {
+      const x = padLeft + i * (barW + gap);
+      const barH = (d.pv / yMax) * chartH;
+      const y = padTop + chartH - barH;
+      svg += `<rect class="bar-rect" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barH, 0).toFixed(1)}" rx="1.5"><title>${formatDateLabel(d.date)}: ${d.pv.toLocaleString()} PV</title></rect>`;
+
+      if (i % labelStep === 0 || i === n - 1) {
+        const lx = x + barW / 2;
+        svg += `<text class="axis-label" x="${lx.toFixed(1)}" y="${height - padBottom + 16}" text-anchor="middle">${formatDateLabel(d.date)}</text>`;
+      }
+    });
+
+    svgEl.innerHTML = svg;
+  }
+
+  document.getElementById("pvBarPeriod").addEventListener("change", () => {
+    loadPvBarChart();
+  });
+
+  // ============================================================
+  // ② カテゴリーランキング推移（線グラフ、1〜10位）
+  // ============================================================
+
+  let trendVisible = true; // 線ごとの表示/非表示状態（インデックス→true/false）
+  let trendLineVisibility = [];
+
+  function trendCacheKey(category, period) {
+    return category + "|" + period;
+  }
+
+  async function loadTrendChart() {
+    if (!categoriesCache) return;
+
+    const items = (categoriesCache[currentCategory] || []).slice(0, 10);
+    const trendEmpty = document.getElementById("trendEmpty");
+    const trendSvg = document.getElementById("trendSvg");
+    const trendLegend = document.getElementById("trendLegend");
+
+    if (items.length === 0) {
+      trendEmpty.textContent = "この期間・カテゴリーのデータはありません";
+      trendEmpty.style.display = "block";
+      trendSvg.style.display = "none";
+      trendLegend.innerHTML = "";
+      return;
+    }
+
+    const period = currentPeriod();
+    const key = trendCacheKey(currentCategory, period);
+    const cached = trendCache[key];
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+      renderTrendChart(items, cached.dates, cached.series);
+      return;
+    }
+
+    trendEmpty.textContent = "読み込み中…";
+    trendEmpty.style.display = "block";
+    trendSvg.style.display = "none";
+
+    try {
+      const paths = items.map(item => item.path);
+      const url = GAS_URL + "?type=pageTrend&paths=" + encodeURIComponent(paths.join(",")) + "&start=" + period + "&end=today";
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.ok) {
+        trendCache[key] = { timestamp: now, dates: data.dates, series: data.series };
+        renderTrendChart(items, data.dates, data.series);
+      } else {
+        trendEmpty.textContent = "取得エラー: " + data.error;
+      }
+    } catch (err) {
+      trendEmpty.textContent = "通信エラーが発生しました";
+      console.error("pageTrend取得失敗:", err);
+    }
+  }
+
+  function renderTrendChart(items, dates, series) {
+    const trendEmpty = document.getElementById("trendEmpty");
+    const trendSvg = document.getElementById("trendSvg");
+    const trendLegend = document.getElementById("trendLegend");
+
+    if (!dates || dates.length < 2) {
+      trendEmpty.textContent = "この期間はデータの日数が少なく、推移グラフを表示できません";
+      trendEmpty.style.display = "block";
+      trendSvg.style.display = "none";
+      trendLegend.innerHTML = "";
+      return;
+    }
+
+    trendEmpty.style.display = "none";
+    trendSvg.style.display = "block";
+
+    // 表示/非表示の状態を作り直す（タブや期間が変わったら全部ONにリセット）
+    trendLineVisibility = items.map(() => true);
+
+    // 凡例（チェックボックス）を描画
+    trendLegend.innerHTML = items.map((item, i) => `
+      <label class="trend-legend-item" data-idx="${i}">
+        <input type="checkbox" checked data-idx="${i}">
+        <span class="trend-legend-swatch" style="background:${TREND_COLORS[i % TREND_COLORS.length]}"></span>
+        <span class="legend-title">${i + 1}位: ${item.title}</span>
+      </label>
+    `).join("");
+
+    trendLegend.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        const idx = parseInt(e.target.dataset.idx, 10);
+        trendLineVisibility[idx] = e.target.checked;
+        e.target.closest(".trend-legend-item").classList.toggle("off", !e.target.checked);
+        drawTrendSvg(items, dates, series);
+      });
+    });
+
+    drawTrendSvg(items, dates, series);
+  }
+
+  function drawTrendSvg(items, dates, series) {
+    const trendSvg = document.getElementById("trendSvg");
+
+    const width = 1000, height = 300;
+    const padLeft = 46, padRight = 10, padTop = 16, padBottom = 34;
+    const chartW = width - padLeft - padRight;
+    const chartH = height - padTop - padBottom;
+
+    let maxPv = 1;
+    items.forEach((item, i) => {
+      if (!trendLineVisibility[i]) return;
+      const values = series[item.path] || [];
+      values.forEach(v => { if (v > maxPv) maxPv = v; });
+    });
+    const yMax = Math.ceil(maxPv * 1.15 / 5) * 5 || 5;
+
+    const n = dates.length;
+    const stepX = n > 1 ? chartW / (n - 1) : 0;
+
+    let labelStep = 1;
+    if (n > 60) labelStep = 10;
+    else if (n > 30) labelStep = 5;
+    else if (n > 14) labelStep = 2;
+
+    let svg = '';
+
+    // Y軸グリッド線
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round(yMax * i / 4);
+      const y = padTop + chartH - (chartH * i / 4);
+      svg += `<line class="axis-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" />`;
+      svg += `<text class="grid-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${val.toLocaleString()}</text>`;
+    }
+
+    // X軸ラベル
+    dates.forEach((date, i) => {
+      if (i % labelStep === 0 || i === n - 1) {
+        const x = padLeft + i * stepX;
+        svg += `<text class="axis-label" x="${x.toFixed(1)}" y="${height - padBottom + 16}" text-anchor="middle">${formatDateLabel(date)}</text>`;
+      }
+    });
+
+    // 線（表示ON中のものだけ）
+    items.forEach((item, i) => {
+      if (!trendLineVisibility[i]) return;
+      const values = series[item.path] || dates.map(() => 0);
+      const color = TREND_COLORS[i % TREND_COLORS.length];
+
+      const points = values.map((v, di) => {
+        const x = padLeft + di * stepX;
+        const y = padTop + chartH - (v / yMax) * chartH;
+        return x.toFixed(1) + "," + y.toFixed(1);
+      }).join(" ");
+
+      svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" />`;
+
+      values.forEach((v, di) => {
+        const x = padLeft + di * stepX;
+        const y = padTop + chartH - (v / yMax) * chartH;
+        svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="${color}"><title>${item.title} / ${formatDateLabel(dates[di])}: ${v.toLocaleString()} PV</title></circle>`;
+      });
+    });
+
+    trendSvg.innerHTML = svg;
+  }
+
+  document.getElementById("trendToggleBtn").addEventListener("click", () => {
+    const wrap = document.getElementById("trendBody");
+    const btn = document.getElementById("trendToggleBtn");
+    const isHidden = wrap.style.display === "none";
+    wrap.style.display = isHidden ? "" : "none";
+    btn.textContent = isHidden ? "非表示にする" : "表示する";
+  });
+
+  // ============================================================
+  // 初期読み込み（同時に複数投げず、必ず順番に実行する）
+  // ============================================================
+  async function initDashboard() {
+    await loadForPeriod();
+    await loadPvBarChart();
+    await loadTrendChart();
+  }
+
+  initDashboard();
 </script>
 
 </body>
