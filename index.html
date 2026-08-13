@@ -4,43 +4,42 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.8
+  OWMS ダッシュボード v1.9
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
-      （GAS側 v1.6 の type=allCategories に対応）
     ・「総合」タブを新設し、起動時デフォルトで表示するように変更。
     ・タブの並び順を 総合／ボイトレ系／スクール関連／DTM系／その他ブログ に変更。
   変更点（v1.1 → v1.2）：
-    ・タブの並び順を 総合／ボイトレ系／DTM系／スクール関連／その他ブログ に変更
-      （「スクール関連」と「DTM系」の順序を入れ替え）。
+    ・タブの並び順を 総合／ボイトレ系／DTM系／スクール関連／その他ブログ に変更。
   変更点（v1.2 → v1.3）：
-    ・画面タイトルの横にバージョン番号を表示するように変更（コメントだけでなく、
-      画面上で見えるようにした）。
+    ・画面タイトルの横にバージョン番号を表示するように変更。
   変更点（v1.3 → v1.4）：
-    ・期間（当日／7日間／1ヶ月など）ごとにデータを15分間キャッシュするように変更。
-      一度見た期間を選び直したときは、15分以内であればGASへ問い合わせずに
-      直前のデータをそのまま表示する（表示が速くなる／GAS・GA4呼び出し回数が減る）。
-      15分を過ぎたら自動的に取り直す。
+    ・期間ごとにデータを15分間キャッシュするように変更。
   変更点（v1.4 → v1.5）：
     ・キャッシュ有効期間を5分→15分に変更。
   変更点（v1.5 → v1.6）：
-    ・新カテゴリー「NEW」を追加。6年ぶりの更新再開（2026年5/28〜）以降に公開された
-      記事だけを集めたタブ。判定はGAS側で記事URL末尾の数字ID（32395以上）で行う。
-      タブ表示順を 総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ に更新。
+    ・新カテゴリー「NEW」を追加。タブ表示順を
+      総合／NEW／ボイトレ系／DTM系／スクール関連／その他ブログ に更新。
   変更点（v1.6 → v1.7）：
-    ・アクティブユーザー数とカテゴリー一括取得を同時に2本（Promise.all）投げていたのを、
-      1本ずつ順番に投げる方式に変更。同時に2本投げるとGASのウェブアプリ側で
-      タイミングによって詰まり、「読み込み中」のまま止まって最終的に通信エラーに
-      なる不具合があったため。
+    ・アクティブユーザー数とカテゴリー一括取得を同時に2本投げていたのを、
+      1本ずつ順番に投げる方式に変更（詰まって通信エラーになる不具合の対応）。
   変更点（v1.7 → v1.8）：
-    ・ダッシュボード最上部に「サイト全体PV推移」の縦棒グラフを追加。
-      専用の期間プルダウン（7日／2週間／1ヶ月／3ヶ月、デフォルト7日）で切替可能。
-    ・その下に「カテゴリーランキング推移（1〜10位）」の線グラフを追加。
-      今選んでいるタブの1〜10位の記事について、日別PV推移を表示。
-      各記事の線はチェックボックスでON/OFF可能、グラフ全体も表示/非表示を切替可能。
-    ・グラフは外部ライブラリを使わず、素のSVGで実装（依存を増やさないため）。
-    ・GAS側 v1.8（type=dailyPV, type=pageTrend を新設）に対応。
+    ・最上部に「サイト全体PV推移」の縦棒グラフ、その下に「カテゴリーランキング推移
+      （1〜10位）」の線グラフを追加。線はチェックボックスでON/OFF、グラフ全体も
+      表示/非表示を切替可能。外部ライブラリは使わず素のSVGで実装。
+  変更点（v1.8 → v1.9）：
+    ・起動時に4回、期間変更時に2回、順番にGASを呼んでいたため、1回10秒前後×
+      複数回で合計30秒以上かかり、途中でタイムアウトして通信エラーになる不具合が
+      発生。GAS側に複合エンドポイント（dashboardInit／periodData）を新設し、
+      起動時・期間変更時はそれぞれ1回のリクエストで必要なデータを全部まとめて
+      取得するように変更（GAS側 v1.9 に対応）。
+  変更点（v1.9 → v1.10）：
+    ・「カテゴリーランキング推移」（線グラフ）をデフォルト非表示に変更。
+      線グラフの取得は一番負荷が重いため、起動時・期間変更時には呼ばず、
+      「表示する」ボタンを押して開いたときだけ個別に取得する方式にした。
+      これにより起動時・期間変更時にGASへ投げる内容がさらに軽くなる。
+      （GAS側 v1.10：dashboardInit／periodDataから線グラフ用データを除外）
 -->
 <style>
   :root {
@@ -159,7 +158,6 @@
 
   .status { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
 
-  /* ここから：グラフセクション用 */
   .chart-section {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -240,7 +238,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.8</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.10</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -268,10 +266,10 @@
   <div class="chart-section-header">
     <h2>カテゴリーランキング推移（1〜10位）</h2>
     <div class="chart-controls">
-      <button class="chart-toggle-btn" id="trendToggleBtn">非表示にする</button>
+      <button class="chart-toggle-btn" id="trendToggleBtn">表示する</button>
     </div>
   </div>
-  <div id="trendBody">
+  <div id="trendBody" style="display:none;">
     <div class="trend-legend" id="trendLegend"></div>
     <div class="chart-svg-wrap" id="trendWrap">
       <div class="chart-empty" id="trendEmpty">読み込み中…</div>
@@ -325,23 +323,18 @@
 <script>
   const GAS_URL = "https://script.google.com/macros/s/AKfycbw4tle8lv9iQdM6F2gmlUUuILh4owSHaYSk9_8WX_d2h3tOzpHD8JFjTS9oiQs9Hkh_/exec";
 
-  // 起動時デフォルトは「総合」
   let currentCategory = "総合";
-
-  // 直近で取得した「今表示中の期間」の全カテゴリー分データ。
-  // タブ切替はここから出し分けるだけで、GASへは再アクセスしない。
   let categoriesCache = null;
 
-  // 期間ごとのキャッシュ本体（アクティブユーザー数＋カテゴリー一括分）。
+  // 期間ごとのキャッシュ（アクティブユーザー数＋カテゴリー一括）
   const periodCache = {};
-  const CACHE_TTL_MS = 15 * 60 * 1000; // 15分間はキャッシュを使う
+  const CACHE_TTL_MS = 15 * 60 * 1000; // 15分
 
-  // 棒グラフ用のキャッシュ（期間ごと）
+  // 棒グラフ用キャッシュ（期間ごと）
   const barCache = {};
-  // 線グラフ用のキャッシュ（カテゴリー＋期間ごと）
+  // 線グラフ用キャッシュ（カテゴリー＋期間ごと）
   const trendCache = {};
 
-  // 線グラフの色パレット（1〜10位に順番に割り当てる）
   const TREND_COLORS = [
     '#e0a94a', '#5aa9e6', '#7bc47f', '#e6799a', '#c792ea',
     '#f2c14e', '#4dd0c9', '#ff8c69', '#9fa8da', '#f06a6a'
@@ -351,25 +344,74 @@
     return document.getElementById("period").value;
   }
 
+  function currentBarPeriod() {
+    return document.getElementById("pvBarPeriod").value;
+  }
+
   function applyActiveUsers(value) {
     const el = document.getElementById("activeUsersValue");
     el.textContent = Number(value).toLocaleString() + " 人";
     el.classList.remove("loading");
   }
 
-  // ============================================================
-  // 既存：アクティブユーザー数＋カテゴリー一括ランキング
-  // ============================================================
+  function setActiveUsersLoading() {
+    const el = document.getElementById("activeUsersValue");
+    el.textContent = "読み込み中…";
+    el.classList.add("loading");
+  }
 
-  // 期間プルダウンの変更時・初回読み込み時に呼ぶ。
-  // キャッシュが新しければそれを使い、古い／無ければGASへ問い合わせて
-  // アクティブユーザー数＋全カテゴリー分を取得し、periodCacheに保存する。
-  //
-  // 注意：アクティブユーザー数とカテゴリー一括取得を「同時に2本」投げると
-  // GASのウェブアプリ側でタイミングによって詰まり、通信エラーになる不具合が
-  // あったため、1本ずつ順番に投げる方式にしている。他のグラフ用リクエストも
-  // 同じ理由で、必ずこの後に続けて（同時にではなく）呼ぶようにする。
-  async function loadForPeriod() {
+  function setRankingLoading() {
+    document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
+  }
+
+  // ============================================================
+  // 起動時：dashboardInit で1回にまとめて取得
+  // （アクティブユーザー数／カテゴリー一括／棒グラフ、まとめて1回）
+  // 線グラフ（カテゴリーランキング推移）はデフォルト非表示なので、
+  // ここでは取得しない。「表示する」ボタンを押したときに個別取得する。
+  // ============================================================
+  async function loadDashboardInit() {
+    const period = currentPeriod();
+    const barPeriod = currentBarPeriod();
+
+    setActiveUsersLoading();
+    setRankingLoading();
+    setChartLoading("pvBarEmpty", "pvBarSvg");
+
+    try {
+      const url = GAS_URL + "?type=dashboardInit&start=" + period + "&end=today&barStart=" + barPeriod;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.ok) {
+        document.getElementById("activeUsersValue").textContent = "取得エラー";
+        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
+        return;
+      }
+
+      const now = Date.now();
+
+      applyActiveUsers(data.activeUsers);
+      categoriesCache = data.categories;
+      renderRanking();
+      periodCache[period] = { timestamp: now, activeUsers: data.activeUsers, categories: data.categories };
+
+      renderPvBarChart(data.dailyPV);
+      barCache[barPeriod] = { timestamp: now, data: data.dailyPV };
+
+    } catch (err) {
+      document.getElementById("activeUsersValue").textContent = "通信エラー";
+      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
+      console.error("dashboardInit取得失敗:", err);
+    }
+  }
+
+  // ============================================================
+  // 期間プルダウン変更時：periodData で1回にまとめて取得
+  // （アクティブユーザー数／カテゴリー一括、まとめて1回）
+  // 線グラフが今開いている場合だけ、追加でloadTrendChart()を呼んで更新する。
+  // ============================================================
+  async function loadPeriodData() {
     const period = currentPeriod();
     const cached = periodCache[period];
     const now = Date.now();
@@ -378,56 +420,38 @@
       applyActiveUsers(cached.activeUsers);
       categoriesCache = cached.categories;
       renderRanking();
+      if (isTrendVisible()) await loadTrendChart();
       return;
     }
 
-    const activeUsersEl = document.getElementById("activeUsersValue");
-    activeUsersEl.textContent = "読み込み中…";
-    activeUsersEl.classList.add("loading");
-
-    const body = document.getElementById("rankingBody");
-    body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
-
-    let activeUsersData = null;
-    let categoriesData = null;
+    setActiveUsersLoading();
+    setRankingLoading();
 
     try {
-      const res = await fetch(GAS_URL + "?type=activeUsers&start=" + period + "&end=today");
-      activeUsersData = await res.json();
-      if (activeUsersData.ok) {
-        applyActiveUsers(activeUsersData.activeUsers);
-      } else {
-        activeUsersEl.textContent = "取得エラー";
-      }
-    } catch (err) {
-      activeUsersEl.textContent = "通信エラー";
-      console.error("activeUsers取得失敗:", err);
-    }
+      const url = GAS_URL + "?type=periodData&start=" + period + "&end=today&category=" + encodeURIComponent(currentCategory);
+      const res = await fetch(url);
+      const data = await res.json();
 
-    try {
-      const res = await fetch(GAS_URL + "?type=allCategories&start=" + period + "&end=today");
-      categoriesData = await res.json();
-      if (categoriesData.ok) {
-        categoriesCache = categoriesData.categories;
-        renderRanking();
-      } else {
-        body.innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + categoriesData.error + '</td></tr>';
+      if (!data.ok) {
+        document.getElementById("activeUsersValue").textContent = "取得エラー";
+        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
+        return;
       }
-    } catch (err) {
-      body.innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
-      console.error("allCategories取得失敗:", err);
-    }
 
-    if (activeUsersData && activeUsersData.ok && categoriesData && categoriesData.ok) {
-      periodCache[period] = {
-        timestamp: now,
-        activeUsers: activeUsersData.activeUsers,
-        categories: categoriesData.categories,
-      };
+      applyActiveUsers(data.activeUsers);
+      categoriesCache = data.categories;
+      renderRanking();
+      periodCache[period] = { timestamp: now, activeUsers: data.activeUsers, categories: data.categories };
+
+      if (isTrendVisible()) await loadTrendChart();
+
+    } catch (err) {
+      document.getElementById("activeUsersValue").textContent = "通信エラー";
+      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
+      console.error("periodData取得失敗:", err);
     }
   }
 
-  // タブ切替時はこちらだけを呼ぶ。GASへは一切アクセスしない。
   function renderRanking() {
     const body = document.getElementById("rankingBody");
     if (!categoriesCache) {
@@ -457,21 +481,24 @@
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     currentCategory = tab.dataset.category;
-    renderRanking(); // キャッシュから出し分けるだけ。GASは呼ばない。
-    await loadTrendChart(); // タブが変わったので、1〜10位の線グラフも更新する
+    renderRanking();
+    if (isTrendVisible()) await loadTrendChart(); // 線グラフが開いている時だけ更新する
   });
 
   document.getElementById("period").addEventListener("change", async () => {
-    await loadForPeriod();
-    await loadTrendChart(); // 線グラフの期間も、この期間プルダウンに連動している
+    await loadPeriodData();
   });
 
   // ============================================================
   // ① サイト全体PV推移（縦棒グラフ）
   // ============================================================
 
-  function currentBarPeriod() {
-    return document.getElementById("pvBarPeriod").value;
+  function setChartLoading(emptyId, svgId) {
+    const emptyEl = document.getElementById(emptyId);
+    const svgEl = document.getElementById(svgId);
+    emptyEl.textContent = "読み込み中…";
+    emptyEl.style.display = "block";
+    svgEl.style.display = "none";
   }
 
   async function loadPvBarChart() {
@@ -484,11 +511,7 @@
       return;
     }
 
-    const emptyEl = document.getElementById("pvBarEmpty");
-    const svgEl = document.getElementById("pvBarSvg");
-    emptyEl.textContent = "読み込み中…";
-    emptyEl.style.display = "block";
-    svgEl.style.display = "none";
+    setChartLoading("pvBarEmpty", "pvBarSvg");
 
     try {
       const res = await fetch(GAS_URL + "?type=dailyPV&start=" + period + "&end=today");
@@ -497,15 +520,14 @@
         barCache[period] = { timestamp: now, data: data.data };
         renderPvBarChart(data.data);
       } else {
-        emptyEl.textContent = "取得エラー: " + data.error;
+        document.getElementById("pvBarEmpty").textContent = "取得エラー: " + data.error;
       }
     } catch (err) {
-      emptyEl.textContent = "通信エラーが発生しました";
+      document.getElementById("pvBarEmpty").textContent = "通信エラーが発生しました";
       console.error("dailyPV取得失敗:", err);
     }
   }
 
-  // 'YYYYMMDD' → 'M/D' の表示用に変換
   function formatDateLabel(yyyymmdd) {
     const m = parseInt(yyyymmdd.substring(4, 6), 10);
     const d = parseInt(yyyymmdd.substring(6, 8), 10);
@@ -538,7 +560,6 @@
     const gap = n > 40 ? 1 : (n > 14 ? 2 : 6);
     const barW = Math.max((chartW - gap * (n - 1)) / n, 1);
 
-    // ラベルを何本ごとに出すか（多すぎると重なるので間引く）
     let labelStep = 1;
     if (n > 60) labelStep = 10;
     else if (n > 30) labelStep = 5;
@@ -546,7 +567,6 @@
 
     let svg = '';
 
-    // Y軸グリッド線（4分割）
     for (let i = 0; i <= 4; i++) {
       const val = Math.round(yMax * i / 4);
       const y = padTop + chartH - (chartH * i / 4);
@@ -554,7 +574,6 @@
       svg += `<text class="grid-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${val.toLocaleString()}</text>`;
     }
 
-    // 棒
     data.forEach((d, i) => {
       const x = padLeft + i * (barW + gap);
       const barH = (d.pv / yMax) * chartH;
@@ -578,13 +597,19 @@
   // ② カテゴリーランキング推移（線グラフ、1〜10位）
   // ============================================================
 
-  let trendVisible = true; // 線ごとの表示/非表示状態（インデックス→true/false）
   let trendLineVisibility = [];
+
+  // 「カテゴリーランキング推移」セクションが今、開いて表示されているかどうか
+  function isTrendVisible() {
+    return document.getElementById("trendBody").style.display !== "none";
+  }
 
   function trendCacheKey(category, period) {
     return category + "|" + period;
   }
 
+  // 「表示する」ボタンを押したとき、またはタブ・期間が変わって開いている状態を
+  // 更新したいときに呼ぶ。今のタブの1〜10位について線グラフを取得する。
   async function loadTrendChart() {
     if (!categoriesCache) return;
 
@@ -611,9 +636,7 @@
       return;
     }
 
-    trendEmpty.textContent = "読み込み中…";
-    trendEmpty.style.display = "block";
-    trendSvg.style.display = "none";
+    setChartLoading("trendEmpty", "trendSvg");
 
     try {
       const paths = items.map(item => item.path);
@@ -648,10 +671,8 @@
     trendEmpty.style.display = "none";
     trendSvg.style.display = "block";
 
-    // 表示/非表示の状態を作り直す（タブや期間が変わったら全部ONにリセット）
     trendLineVisibility = items.map(() => true);
 
-    // 凡例（チェックボックス）を描画
     trendLegend.innerHTML = items.map((item, i) => `
       <label class="trend-legend-item" data-idx="${i}">
         <input type="checkbox" checked data-idx="${i}">
@@ -698,7 +719,6 @@
 
     let svg = '';
 
-    // Y軸グリッド線
     for (let i = 0; i <= 4; i++) {
       const val = Math.round(yMax * i / 4);
       const y = padTop + chartH - (chartH * i / 4);
@@ -706,7 +726,6 @@
       svg += `<text class="grid-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${val.toLocaleString()}</text>`;
     }
 
-    // X軸ラベル
     dates.forEach((date, i) => {
       if (i % labelStep === 0 || i === n - 1) {
         const x = padLeft + i * stepX;
@@ -714,7 +733,6 @@
       }
     });
 
-    // 線（表示ON中のものだけ）
     items.forEach((item, i) => {
       if (!trendLineVisibility[i]) return;
       const values = series[item.path] || dates.map(() => 0);
@@ -738,24 +756,28 @@
     trendSvg.innerHTML = svg;
   }
 
-  document.getElementById("trendToggleBtn").addEventListener("click", () => {
+  document.getElementById("trendToggleBtn").addEventListener("click", async () => {
     const wrap = document.getElementById("trendBody");
     const btn = document.getElementById("trendToggleBtn");
     const isHidden = wrap.style.display === "none";
+
     wrap.style.display = isHidden ? "" : "none";
     btn.textContent = isHidden ? "非表示にする" : "表示する";
+
+    // 非表示→表示にしたときだけ、まだ取得していなければここで初めて取得する
+    if (isHidden) {
+      const period = currentPeriod();
+      const key = trendCacheKey(currentCategory, period);
+      if (!trendCache[key]) {
+        await loadTrendChart();
+      }
+    }
   });
 
   // ============================================================
-  // 初期読み込み（同時に複数投げず、必ず順番に実行する）
+  // 初期読み込み：起動時は dashboardInit の1回だけでOK
   // ============================================================
-  async function initDashboard() {
-    await loadForPeriod();
-    await loadPvBarChart();
-    await loadTrendChart();
-  }
-
-  initDashboard();
+  loadDashboardInit();
 </script>
 
 </body>
