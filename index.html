@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.12
+  OWMS ダッシュボード v1.13
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -46,6 +46,13 @@
     ・「サイト全体PV推移」の期間プルダウンに「6ヶ月」を追加（デフォルト表示は
       3ヶ月のまま変更なし）。GA4側は相対日付形式（180daysAgo）をそのまま
       受け付けるため、GASコード側の変更なし（v1.10のまま）。
+  変更点（v1.12 → v1.13）：【お試し版・使いにくければv1.12に戻す前提】
+    ・「サイト全体PV推移」と「カテゴリーランキング推移」を1つのセクションに統合。
+      見出し横に「PV推移／ランキング推移」の切替ボタンを設置し、選択されている
+      方だけを表示する方式に変更（旧「表示する」ボタンは廃止）。
+    ・ランキング推移は今まで通り、初めて切り替えたとき（未取得の場合）だけ
+      個別に取得する方式を維持（起動時の負荷は増えていない）。
+    ・GASコード側の変更なし（v1.10のまま）。
 -->
 <style>
   :root {
@@ -197,6 +204,24 @@
   }
   .chart-toggle-btn:hover { border-color: var(--accent-dim); color: var(--text); }
 
+  .chart-switch {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .switch-btn {
+    background: var(--panel-2);
+    color: var(--text-muted);
+    border: none;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .switch-btn + .switch-btn { border-left: 1px solid var(--border); }
+  .switch-btn:hover { color: var(--text); }
+  .switch-btn.active { background: var(--accent); color: #1c2230; font-weight: 600; }
+
   .chart-svg-wrap { width: 100%; overflow-x: auto; }
   .chart-svg-wrap svg { width: 100%; height: auto; display: block; }
   .chart-svg-wrap.hidden { display: none; }
@@ -244,15 +269,19 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.12</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.13</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
-<!-- ① サイト全体PV推移（縦棒グラフ） -->
+<!-- ①②統合：サイト全体PV推移／カテゴリーランキング推移（お試し版・v1.13） -->
 <div class="chart-section">
   <div class="chart-section-header">
-    <h2>サイト全体PV推移</h2>
+    <h2 id="chartSectionTitle">サイト全体PV推移</h2>
     <div class="chart-controls">
+      <div class="chart-switch">
+        <button class="switch-btn active" id="switchPvBtn" type="button">PV推移</button>
+        <button class="switch-btn" id="switchTrendBtn" type="button">ランキング推移</button>
+      </div>
       <select id="pvBarPeriod">
         <option value="7daysAgo">7日</option>
         <option value="14daysAgo">2週間</option>
@@ -262,21 +291,15 @@
       </select>
     </div>
   </div>
-  <div class="chart-svg-wrap" id="pvBarWrap">
-    <div class="chart-empty" id="pvBarEmpty">読み込み中…</div>
-    <svg id="pvBarSvg" viewBox="0 0 1000 260" style="display:none;"></svg>
-  </div>
-</div>
 
-<!-- ② カテゴリーランキング推移（線グラフ、1〜10位） -->
-<div class="chart-section">
-  <div class="chart-section-header">
-    <h2>カテゴリーランキング推移（1〜10位）</h2>
-    <div class="chart-controls">
-      <button class="chart-toggle-btn" id="trendToggleBtn">表示する</button>
+  <div id="pvBarSection">
+    <div class="chart-svg-wrap" id="pvBarWrap">
+      <div class="chart-empty" id="pvBarEmpty">読み込み中…</div>
+      <svg id="pvBarSvg" viewBox="0 0 1000 260" style="display:none;"></svg>
     </div>
   </div>
-  <div id="trendBody" style="display:none;">
+
+  <div id="trendSection" style="display:none;">
     <div class="trend-legend" id="trendLegend"></div>
     <div class="chart-svg-wrap" id="trendWrap">
       <div class="chart-empty" id="trendEmpty">読み込み中…</div>
@@ -608,7 +631,7 @@
 
   // 「カテゴリーランキング推移」セクションが今、開いて表示されているかどうか
   function isTrendVisible() {
-    return document.getElementById("trendBody").style.display !== "none";
+    return document.getElementById("trendSection").style.display !== "none";
   }
 
   function trendCacheKey(category, period) {
@@ -763,23 +786,43 @@
     trendSvg.innerHTML = svg;
   }
 
-  document.getElementById("trendToggleBtn").addEventListener("click", async () => {
-    const wrap = document.getElementById("trendBody");
-    const btn = document.getElementById("trendToggleBtn");
-    const isHidden = wrap.style.display === "none";
+  // ============================================================
+  // ①②統合：PV推移／ランキング推移の切替（v1.13・お試し版）
+  // ============================================================
+  function setChartView(view) {
+    const pvSection = document.getElementById("pvBarSection");
+    const trendSection = document.getElementById("trendSection");
+    const pvBtn = document.getElementById("switchPvBtn");
+    const trendBtn = document.getElementById("switchTrendBtn");
+    const periodSelect = document.getElementById("pvBarPeriod");
+    const title = document.getElementById("chartSectionTitle");
 
-    wrap.style.display = isHidden ? "" : "none";
-    btn.textContent = isHidden ? "非表示にする" : "表示する";
+    if (view === "trend") {
+      pvSection.style.display = "none";
+      trendSection.style.display = "";
+      periodSelect.style.display = "none";
+      pvBtn.classList.remove("active");
+      trendBtn.classList.add("active");
+      title.textContent = "カテゴリーランキング推移（1〜10位）";
 
-    // 非表示→表示にしたときだけ、まだ取得していなければここで初めて取得する
-    if (isHidden) {
+      // 初めて開いたとき（未取得の場合）だけ個別に取得する
       const period = currentPeriod();
       const key = trendCacheKey(currentCategory, period);
       if (!trendCache[key]) {
-        await loadTrendChart();
+        loadTrendChart();
       }
+    } else {
+      trendSection.style.display = "none";
+      pvSection.style.display = "";
+      periodSelect.style.display = "";
+      trendBtn.classList.remove("active");
+      pvBtn.classList.add("active");
+      title.textContent = "サイト全体PV推移";
     }
-  });
+  }
+
+  document.getElementById("switchPvBtn").addEventListener("click", () => setChartView("pv"));
+  document.getElementById("switchTrendBtn").addEventListener("click", () => setChartView("trend"));
 
   // ============================================================
   // 初期読み込み：起動時は dashboardInit の1回だけでOK
