@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>記事詳細 | OWMS ダッシュボード</title>
+<!--
+  OWMS 記事詳細画面 detail.html v1.0
+  index.html のランキング表「詳細」ボタンから新しいタブで開かれる。
+  クエリパラメータ path（記事パス）・title（記事タイトル）・period（期間キーワード、
+  index.html の「期間」プルダウンと同じ値）を受け取り、GASの type=pageDetail から
+  詳細データを取得して表示する。
+  対応GASコード：v1.11（type=pageDetail）
+-->
+<style>
+  :root {
+    --bg: #1c2230;
+    --panel: #262e40;
+    --panel-2: #2f3850;
+    --border: #3a4358;
+    --text: #e8ecf4;
+    --text-muted: #8b93a7;
+    --accent: #e0a94a;
+    --accent-dim: #6b5730;
+    --up: #6bbf8a;
+    --down: #d9736b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  a.back { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+  a.back:hover { color: var(--text); }
+
+  header { margin: 14px 0 20px; }
+  header h1 { font-size: 18px; margin: 0 0 6px; }
+  header .path { color: var(--text-muted); font-size: 13px; word-break: break-all; }
+  header .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .badge {
+    display: inline-block;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .badge.new { color: var(--accent); border-color: var(--accent-dim); }
+
+  .section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .section h2 { font-size: 14px; margin: 0 0 14px; color: var(--text); }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .stat-card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-card .label { color: var(--text-muted); font-size: 12px; margin: 0 0 6px; }
+  .stat-card .value { font-size: 20px; font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+  .stat-card .diff { font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .diff.up { color: var(--up); }
+  .diff.down { color: var(--down); }
+  .diff.flat { color: var(--text-muted); }
+
+  .breakdown-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .breakdown-row .bd-label { width: 130px; flex-shrink: 0; color: var(--text-muted); }
+  .breakdown-row .bd-bar-wrap { flex: 1; background: var(--panel-2); border-radius: 4px; overflow: hidden; height: 14px; }
+  .breakdown-row .bd-bar { background: var(--accent); height: 100%; }
+  .breakdown-row .bd-value { width: 60px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+  .chart-svg-wrap { width: 100%; overflow-x: auto; }
+  .chart-svg-wrap svg { width: 100%; height: auto; display: block; }
+  .axis-line { stroke: var(--border); stroke-width: 1; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .grid-label { fill: var(--text-muted); font-size: 10px; }
+
+  .status { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
+  .period-note { color: var(--text-muted); font-size: 12px; margin-top: -8px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="back" href="javascript:window.close();">← このタブを閉じる</a>
+
+  <header>
+    <h1 id="pageTitle">読み込み中…</h1>
+    <div class="path" id="pagePath"></div>
+    <div class="meta" id="pageMeta"></div>
+  </header>
+
+  <div class="section">
+    <h2>PV・ユーザー指標（前期間比較）</h2>
+    <div class="period-note" id="periodNote"></div>
+    <div class="stat-grid" id="statGrid">
+      <div class="status">読み込み中…</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>日別PV推移</h2>
+    <div class="chart-svg-wrap" id="trendWrap">
+      <div class="status" id="trendEmpty">読み込み中…</div>
+      <svg id="trendSvg" viewBox="0 0 700 220" style="display:none;"></svg>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>流入元の内訳</h2>
+    <div id="channelBody"><div class="status">読み込み中…</div></div>
+  </div>
+
+  <div class="section">
+    <h2>デバイス別内訳</h2>
+    <div id="deviceBody"><div class="status">読み込み中…</div></div>
+  </div>
+
+</div>
+
+<script>
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbw4tle8lv9iQdM6F2gmlUUuILh4owSHaYSk9_8WX_d2h3tOzpHD8JFjTS9oiQs9Hkh_/exec";
+
+  const qs = new URLSearchParams(location.search);
+  const path = qs.get("path") || "";
+  const title = qs.get("title") || "";
+  const period = qs.get("period") || "7daysAgo";
+
+  const PERIOD_LABELS = {
+    "today": "当日", "7daysAgo": "7日間", "14daysAgo": "2週間",
+    "30daysAgo": "1ヶ月", "60daysAgo": "2ヶ月", "90daysAgo": "3ヶ月", "180daysAgo": "6ヶ月"
+  };
+
+  document.getElementById("pageTitle").textContent = title || "(タイトル不明)";
+  document.getElementById("pagePath").textContent = path;
+
+  function formatDateLabel(yyyymmdd) {
+    const m = parseInt(yyyymmdd.substring(4, 6), 10);
+    const d = parseInt(yyyymmdd.substring(6, 8), 10);
+    return m + "/" + d;
+  }
+
+  function pct(v) { return (v * 100).toFixed(1) + "%"; }
+
+  function diffHtml(current, previous, unit) {
+    unit = unit || "";
+    if (previous === 0) {
+      if (current === 0) return '<div class="diff flat">前期間比 —</div>';
+      return '<div class="diff up">前期間比 —（前期間0）</div>';
+    }
+    const diff = current - previous;
+    const rate = (diff / previous) * 100;
+    const sign = diff > 0 ? "+" : "";
+    const cls = diff > 0 ? "up" : (diff < 0 ? "down" : "flat");
+    return '<div class="diff ' + cls + '">前期間比 ' + sign + diff.toLocaleString() + unit + '（' + sign + rate.toFixed(1) + '%）</div>';
+  }
+
+  function statCard(label, currentVal, previousVal, displayFn, unit) {
+    displayFn = displayFn || (v => v.toLocaleString());
+    return `
+      <div class="stat-card">
+        <p class="label">${label}</p>
+        <p class="value">${displayFn(currentVal)}</p>
+        ${diffHtml(currentVal, previousVal, unit || "")}
+      </div>
+    `;
+  }
+
+  if (!path) {
+    document.getElementById("statGrid").innerHTML = '<div class="status">記事が指定されていません</div>';
+  } else {
+    loadDetail();
+  }
+
+  async function loadDetail() {
+    try {
+      const url = GAS_URL + "?type=pageDetail&path=" + encodeURIComponent(path) + "&start=" + encodeURIComponent(period);
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.ok) {
+        document.getElementById("statGrid").innerHTML = '<div class="status">取得エラー: ' + data.error + '</div>';
+        return;
+      }
+
+      renderMeta(data);
+      renderStats(data);
+      renderTrend(data.trend);
+      renderBreakdown("channelBody", data.channels, "流入元");
+      renderBreakdown("deviceBody", data.devices, "デバイス");
+
+    } catch (err) {
+      document.getElementById("statGrid").innerHTML = '<div class="status">通信エラーが発生しました</div>';
+      console.error("pageDetail取得失敗:", err);
+    }
+  }
+
+  function renderMeta(data) {
+    const meta = document.getElementById("pageMeta");
+    let badges = '<span class="badge">' + data.category + '</span>';
+    if (data.isNew) badges += '<span class="badge new">NEW</span>';
+    if (data.publishDate) {
+      badges += '<span class="badge">公開日: ' + data.publishDate + '</span>';
+      badges += '<span class="badge">公開から ' + data.daysSincePublish + '日</span>';
+    } else {
+      badges += '<span class="badge">公開日: 不明</span>';
+    }
+    meta.innerHTML = badges;
+
+    const periodLabel = PERIOD_LABELS[data.period] || data.period;
+    document.getElementById("periodNote").textContent =
+      "今期間：" + data.currentRange.start + "〜" + data.currentRange.end + "（" + periodLabel + "）　／　" +
+      "前期間：" + data.previousRange.start + "〜" + data.previousRange.end;
+  }
+
+  function renderStats(data) {
+    const c = data.metrics.current;
+    const p = data.metrics.previous;
+    const grid = document.getElementById("statGrid");
+    grid.innerHTML =
+      statCard("PV数", c.pv, p.pv) +
+      statCard("アクティブユーザー数", c.activeUsers, p.activeUsers) +
+      statCard("新規ユーザー数", c.newUsers, p.newUsers) +
+      statCard("エンゲージ率", c.engagementRate, p.engagementRate, pct, "pt") +
+      statCard("直帰率", c.bounceRate, p.bounceRate, pct, "pt") +
+      statCard("平均エンゲージメント時間", c.avgEngagementSec, p.avgEngagementSec, v => v + "秒", "秒");
+  }
+
+  function renderTrend(trend) {
+    const emptyEl = document.getElementById("trendEmpty");
+    const svgEl = document.getElementById("trendSvg");
+
+    if (!trend || !trend.dates || trend.dates.length < 2) {
+      emptyEl.textContent = "この期間はデータの日数が少なく、推移グラフを表示できません";
+      emptyEl.style.display = "block";
+      svgEl.style.display = "none";
+      return;
+    }
+
+    emptyEl.style.display = "none";
+    svgEl.style.display = "block";
+
+    const width = 700, height = 220;
+    const padLeft = 42, padRight = 10, padTop = 14, padBottom = 30;
+    const chartW = width - padLeft - padRight;
+    const chartH = height - padTop - padBottom;
+
+    const dates = trend.dates;
+    const values = trend.values;
+    const maxV = Math.max(...values, 1);
+    const yMax = Math.ceil(maxV * 1.15 / 5) * 5 || 5;
+    const n = dates.length;
+    const stepX = n > 1 ? chartW / (n - 1) : 0;
+
+    let labelStep = 1;
+    if (n > 60) labelStep = 10;
+    else if (n > 30) labelStep = 5;
+    else if (n > 14) labelStep = 2;
+
+    let svg = '';
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round(yMax * i / 4);
+      const y = padTop + chartH - (chartH * i / 4);
+      svg += `<line class="axis-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" />`;
+      svg += `<text class="grid-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${val.toLocaleString()}</text>`;
+    }
+    dates.forEach((date, i) => {
+      if (i % labelStep === 0 || i === n - 1) {
+        const x = padLeft + i * stepX;
+        svg += `<text class="axis-label" x="${x.toFixed(1)}" y="${height - padBottom + 16}" text-anchor="middle">${formatDateLabel(date)}</text>`;
+      }
+    });
+
+    const points = values.map((v, i) => {
+      const x = padLeft + i * stepX;
+      const y = padTop + chartH - (v / yMax) * chartH;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    svg += `<polyline points="${points}" fill="none" stroke="#e0a94a" stroke-width="2" />`;
+    values.forEach((v, i) => {
+      const x = padLeft + i * stepX;
+      const y = padTop + chartH - (v / yMax) * chartH;
+      svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="#e0a94a"><title>${formatDateLabel(dates[i])}: ${v.toLocaleString()} PV</title></circle>`;
+    });
+
+    svgEl.innerHTML = svg;
+  }
+
+  function renderBreakdown(containerId, items, emptyLabel) {
+    const el = document.getElementById(containerId);
+    if (!items || items.length === 0) {
+      el.innerHTML = '<div class="status">この期間のデータはありません</div>';
+      return;
+    }
+    const total = items.reduce((sum, item) => sum + item.pv, 0) || 1;
+    el.innerHTML = items.map(item => {
+      const ratio = Math.round((item.pv / total) * 100);
+      return `
+        <div class="breakdown-row">
+          <div class="bd-label">${item.label || "(不明)"}</div>
+          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${ratio}%"></div></div>
+          <div class="bd-value">${item.pv.toLocaleString()} (${ratio}%)</div>
+        </div>
+      `;
+    }).join("");
+  }
+</script>
+</body>
+</html>
