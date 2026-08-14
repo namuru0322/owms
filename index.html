@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.13
+  OWMS ダッシュボード v1.14
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -52,6 +52,12 @@
       方だけを表示する方式に変更（旧「表示する」ボタンは廃止）。
     ・ランキング推移は今まで通り、初めて切り替えたとき（未取得の場合）だけ
       個別に取得する方式を維持（起動時の負荷は増えていない）。
+    ・GASコード側の変更なし（v1.10のまま）。
+  変更点（v1.13 → v1.14）：
+    ・「カテゴリーランキング推移（1〜10位）」表示時、見出しに今どのカテゴリーの
+      グラフを見ているかが分かるよう、カテゴリー名を追加表示
+      （例：「カテゴリーランキング推移（1〜10位）｜DTM系」）。
+      タブを切り替えたときも見出しのカテゴリー名が連動して更新される。
     ・GASコード側の変更なし（v1.10のまま）。
 -->
 <style>
@@ -269,7 +275,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.13</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.14</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -505,6 +511,12 @@
     }
   }
 
+  // ランキング推移のタイトルに、今表示中のカテゴリー名を付ける
+  function updateTrendTitle() {
+    document.getElementById("chartSectionTitle").textContent =
+      "カテゴリーランキング推移（1〜10位）｜" + currentCategory;
+  }
+
   document.getElementById("tabs").addEventListener("click", async (e) => {
     const tab = e.target.closest(".tab");
     if (!tab) return;
@@ -512,7 +524,10 @@
     tab.classList.add("active");
     currentCategory = tab.dataset.category;
     renderRanking();
-    if (isTrendVisible()) await loadTrendChart(); // 線グラフが開いている時だけ更新する
+    if (isTrendVisible()) {
+      updateTrendTitle(); // タブ切替時、ランキング推移表示中ならタイトルのカテゴリー名も更新
+      await loadTrendChart();
+    }
   });
 
   document.getElementById("period").addEventListener("change", async () => {
@@ -795,7 +810,6 @@
     const pvBtn = document.getElementById("switchPvBtn");
     const trendBtn = document.getElementById("switchTrendBtn");
     const periodSelect = document.getElementById("pvBarPeriod");
-    const title = document.getElementById("chartSectionTitle");
 
     if (view === "trend") {
       pvSection.style.display = "none";
@@ -803,7 +817,7 @@
       periodSelect.style.display = "none";
       pvBtn.classList.remove("active");
       trendBtn.classList.add("active");
-      title.textContent = "カテゴリーランキング推移（1〜10位）";
+      updateTrendTitle();
 
       // 初めて開いたとき（未取得の場合）だけ個別に取得する
       const period = currentPeriod();
@@ -817,7 +831,7 @@
       periodSelect.style.display = "";
       trendBtn.classList.remove("active");
       pvBtn.classList.add("active");
-      title.textContent = "サイト全体PV推移";
+      document.getElementById("chartSectionTitle").textContent = "サイト全体PV推移";
     }
   }
 
