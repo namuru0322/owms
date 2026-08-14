@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.14
+  OWMS ダッシュボード v1.15
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -58,6 +58,13 @@
       グラフを見ているかが分かるよう、カテゴリー名を追加表示
       （例：「カテゴリーランキング推移（1〜10位）｜DTM系」）。
       タブを切り替えたときも見出しのカテゴリー名が連動して更新される。
+    ・GASコード側の変更なし（v1.10のまま）。
+  変更点（v1.14 → v1.15）：
+    ・カテゴリータブを切り替えた際、表示件数の差でページの高さが変わり
+      スクロール位置が縦にズレる不具合を解消（マスターシート11章④）。
+      ランキング表の1行あたりの実際の高さを最初の描画時に測定し、常に
+      「30位分」の枠（min-height）を確保する方式で固定。以後どのカテゴリー
+      に切り替えてもページの高さは変わらない。
     ・GASコード側の変更なし（v1.10のまま）。
 -->
 <style>
@@ -153,6 +160,7 @@
   }
 
   table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
+  .ranking-wrap { display: block; }
   thead th {
     text-align: left;
     font-size: 12px;
@@ -275,7 +283,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.14</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.15</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -343,6 +351,7 @@
   <div class="tab" data-category="その他ブログ">その他ブログ</div>
 </div>
 
+<div class="ranking-wrap" id="rankingWrap">
 <table>
   <thead>
     <tr>
@@ -355,6 +364,7 @@
     <tr><td colspan="3" class="status">読み込み中…</td></tr>
   </tbody>
 </table>
+</div>
 
 <script>
   const GAS_URL = "https://script.google.com/macros/s/AKfycbw4tle8lv9iQdM6F2gmlUUuILh4owSHaYSk9_8WX_d2h3tOzpHD8JFjTS9oiQs9Hkh_/exec";
@@ -488,6 +498,22 @@
     }
   }
 
+  let rankingMinHeightSet = false;
+
+  // タブ切替でランキング表の行数（表示件数）が変わりページ全体の高さが変わることで
+  // スクロール位置が縦にズレる不具合の対策。
+  // 実際に描画された行の高さを元に「常に30位分」の枠を一度だけ確保する。
+  function ensureRankingMinHeight(rowCount) {
+    if (rankingMinHeightSet || rowCount === 0) return;
+    const wrap = document.getElementById("rankingWrap");
+    const tbody = document.getElementById("rankingBody");
+    const thead = wrap.querySelector("thead");
+    const avgRowHeight = tbody.offsetHeight / rowCount;
+    const theadHeight = thead ? thead.offsetHeight : 0;
+    wrap.style.minHeight = Math.ceil(theadHeight + avgRowHeight * 30) + "px";
+    rankingMinHeightSet = true;
+  }
+
   function renderRanking() {
     const body = document.getElementById("rankingBody");
     if (!categoriesCache) {
@@ -496,7 +522,8 @@
     }
     const items = categoriesCache[currentCategory] || [];
     if (items.length > 0) {
-      body.innerHTML = items.slice(0, 30).map((item, i) => `
+      const shown = items.slice(0, 30);
+      body.innerHTML = shown.map((item, i) => `
         <tr>
           <td class="rank">${i + 1}</td>
           <td class="title">
@@ -506,6 +533,7 @@
           <td class="pv">${item.pv.toLocaleString()}</td>
         </tr>
       `).join("");
+      ensureRankingMinHeight(shown.length);
     } else {
       body.innerHTML = '<tr><td colspan="3" class="status">この期間・カテゴリーのデータはありません</td></tr>';
     }
