@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.9
+  OWMS ダッシュボード v1.12
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -42,6 +42,10 @@
       （GAS側 v1.10：dashboardInit／periodDataから線グラフ用データを除外）
   変更点（v1.10 → v1.11）：
     ・「サイト全体PV推移」のデフォルト期間を 7日 → 3ヶ月 に変更。
+  変更点（v1.11 → v1.12）：
+    ・「サイト全体PV推移」の期間プルダウンに「6ヶ月」を追加（デフォルト表示は
+      3ヶ月のまま変更なし）。GA4側は相対日付形式（180daysAgo）をそのまま
+      受け付けるため、GASコード側の変更なし（v1.10のまま）。
 -->
 <style>
   :root {
@@ -240,7 +244,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.11</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.12</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -254,6 +258,7 @@
         <option value="14daysAgo">2週間</option>
         <option value="30daysAgo">1ヶ月</option>
         <option value="90daysAgo" selected>3ヶ月</option>
+        <option value="180daysAgo">6ヶ月</option>
       </select>
     </div>
   </div>
