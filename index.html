@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.15
+  OWMS ダッシュボード v1.16
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -66,6 +66,13 @@
       「30位分」の枠（min-height）を確保する方式で固定。以後どのカテゴリー
       に切り替えてもページの高さは変わらない。
     ・GASコード側の変更なし（v1.10のまま）。
+  変更点（v1.15 → v1.16）：
+    ・ランキング表の各記事にPV数の右横「詳細」ボタンを追加。押すと新しいタブで
+      detail.html（新規ファイル）が開き、その記事のPV・アクティブユーザー・
+      新規ユーザー・エンゲージ率・直帰率・平均エンゲージメント時間（前期間比較
+      付き）、流入元内訳、デバイス別内訳、日別PVミニ推移、公開日・経過日数・
+      カテゴリーを確認できるようにした。
+    ・GASコード側 v1.11 に対応（新エンドポイント type=pageDetail を追加）。
 -->
 <style>
   :root {
@@ -182,6 +189,19 @@
   td.path { color: var(--text-muted); font-size: 12px; }
   td.title a { color: var(--text); text-decoration: none; }
   td.title a:hover { color: var(--accent); }
+  td.detail-cell { text-align: right; width: 64px; }
+  .detail-btn {
+    display: inline-block;
+    background: var(--panel-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .detail-btn:hover { border-color: var(--accent-dim); color: var(--text); }
 
   .status { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
 
@@ -283,7 +303,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.15</span></h1>
+  <h1>OWMS ダッシュボード<span class="version-tag">v1.16</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -358,10 +378,11 @@
       <th></th>
       <th>タイトル</th>
       <th style="text-align:right;">PV</th>
+      <th></th>
     </tr>
   </thead>
   <tbody id="rankingBody">
-    <tr><td colspan="3" class="status">読み込み中…</td></tr>
+    <tr><td colspan="4" class="status">読み込み中…</td></tr>
   </tbody>
 </table>
 </div>
@@ -407,7 +428,7 @@
   }
 
   function setRankingLoading() {
-    document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
+    document.getElementById("rankingBody").innerHTML = '<tr><td colspan="4" class="status">読み込み中…</td></tr>';
   }
 
   // ============================================================
@@ -431,7 +452,7 @@
 
       if (!data.ok) {
         document.getElementById("activeUsersValue").textContent = "取得エラー";
-        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
+        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="4" class="status">取得エラー: ' + data.error + '</td></tr>';
         return;
       }
 
@@ -447,7 +468,7 @@
 
     } catch (err) {
       document.getElementById("activeUsersValue").textContent = "通信エラー";
-      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
+      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="4" class="status">通信エラーが発生しました</td></tr>';
       console.error("dashboardInit取得失敗:", err);
     }
   }
@@ -480,7 +501,7 @@
 
       if (!data.ok) {
         document.getElementById("activeUsersValue").textContent = "取得エラー";
-        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">取得エラー: ' + data.error + '</td></tr>';
+        document.getElementById("rankingBody").innerHTML = '<tr><td colspan="4" class="status">取得エラー: ' + data.error + '</td></tr>';
         return;
       }
 
@@ -493,7 +514,7 @@
 
     } catch (err) {
       document.getElementById("activeUsersValue").textContent = "通信エラー";
-      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="3" class="status">通信エラーが発生しました</td></tr>';
+      document.getElementById("rankingBody").innerHTML = '<tr><td colspan="4" class="status">通信エラーが発生しました</td></tr>';
       console.error("periodData取得失敗:", err);
     }
   }
@@ -517,12 +538,13 @@
   function renderRanking() {
     const body = document.getElementById("rankingBody");
     if (!categoriesCache) {
-      body.innerHTML = '<tr><td colspan="3" class="status">読み込み中…</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="status">読み込み中…</td></tr>';
       return;
     }
     const items = categoriesCache[currentCategory] || [];
     if (items.length > 0) {
       const shown = items.slice(0, 30);
+      const period = currentPeriod();
       body.innerHTML = shown.map((item, i) => `
         <tr>
           <td class="rank">${i + 1}</td>
@@ -531,11 +553,14 @@
             <div class="path">${item.path}</div>
           </td>
           <td class="pv">${item.pv.toLocaleString()}</td>
+          <td class="detail-cell">
+            <a class="detail-btn" href="detail.html?path=${encodeURIComponent(item.path)}&title=${encodeURIComponent(item.title)}&period=${encodeURIComponent(period)}" target="_blank" rel="noopener">詳細</a>
+          </td>
         </tr>
       `).join("");
       ensureRankingMinHeight(shown.length);
     } else {
-      body.innerHTML = '<tr><td colspan="3" class="status">この期間・カテゴリーのデータはありません</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="status">この期間・カテゴリーのデータはありません</td></tr>';
     }
   }
 
