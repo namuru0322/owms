@@ -4,12 +4,21 @@
 <meta charset="UTF-8">
 <title>記事詳細 | OWMS ダッシュボード</title>
 <!--
-  OWMS 記事詳細画面 detail.html v1.3
+  OWMS 記事詳細画面 detail.html v1.4
   index.html のランキング表「詳細」ボタンから新しいタブで開かれる。
   クエリパラメータ path（記事パス）・title（記事タイトル）・period（期間キーワード、
   index.html の「期間」プルダウンと同じ値）を受け取り、GASの type=pageDetail から
   詳細データを取得して表示する。
-  対応GASコード：v1.13
+  対応GASコード：v1.14
+
+  変更点（v1.3 → v1.4）：
+    ・「流入元の内訳」を2階層方式に変更。チャネルグループ（Direct／Organic Search等）
+      の行はそのまま残し、クリックすると具体的な参照元（YouTube、Twitter(X)、
+      Instagram等）の内訳が展開表示されるようにした。GASからのレスポンス形式が
+      channels: [{ label, pv, sources: [{label, pv}, ...] }] に変わったのに合わせ、
+      renderBreakdown（デバイス別内訳用に流用）とは別にrenderChannelBreakdown
+      関数を新設。データは詳細画面を開いた時点で1回のAPI呼び出しに含めて取得済み
+      のため、展開時に追加の通信は発生しない。
 
   変更点（v1.0 → v1.1）：
     ・「PV・ユーザー指標（前期間比較）」の数字だけでは今期間・前期間がいつからいつ
@@ -175,6 +184,27 @@
   .breakdown-row .bd-bar { background: var(--accent); height: 100%; }
   .breakdown-row .bd-value { width: 60px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
+  /* --- 流入元の内訳（2階層・チャネル→具体的な参照元、v1.4） --- */
+  .breakdown-group { margin-bottom: 4px; }
+  .breakdown-toggle { cursor: pointer; }
+  .breakdown-toggle:hover .bd-label { color: var(--text); }
+  .bd-chevron {
+    display: inline-block;
+    width: 10px;
+    margin-right: 5px;
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+  .breakdown-sub-wrap {
+    margin: 2px 0 10px 20px;
+    padding-left: 10px;
+    border-left: 1px solid var(--border);
+  }
+  .breakdown-sub { margin-bottom: 6px; font-size: 12px; }
+  .breakdown-sub .bd-label { color: var(--text-muted); width: 120px; }
+  .breakdown-sub .bd-bar { background: var(--accent-dim); }
+  .breakdown-sub-empty { color: var(--text-muted); font-size: 12px; padding: 2px 0 6px 4px; }
+
   .chart-svg-wrap { width: 100%; overflow-x: auto; }
   .chart-svg-wrap svg { width: 100%; height: auto; display: block; }
   .axis-line { stroke: var(--border); stroke-width: 1; }
@@ -190,7 +220,7 @@
 
   <div class="top-row">
     <a class="back" href="javascript:window.close();">← このタブを閉じる</a>
-    <span class="version-tag-top">v1.3</span>
+    <span class="version-tag-top">v1.4</span>
   </div>
 
   <header>
@@ -336,7 +366,7 @@
       renderMeta(data);
       renderStats(data);
       renderTrend(data.trend);
-      renderBreakdown("channelBody", data.channels, "流入元");
+      renderChannelBreakdown("channelBody", data.channels);
       renderBreakdown("deviceBody", data.devices, "デバイス");
 
     } catch (err) {
@@ -459,6 +489,58 @@
     });
 
     svgEl.innerHTML = svg;
+  }
+
+  // 「流入元の内訳」を2階層（チャネルグループ→具体的な参照元）で表示する（v1.4）。
+  // データは既に1回のAPI呼び出しで取得済みのため、クリック展開時の追加通信は発生しない。
+  function renderChannelBreakdown(containerId, items) {
+    const el = document.getElementById(containerId);
+    if (!items || items.length === 0) {
+      el.innerHTML = '<div class="status">この期間のデータはありません</div>';
+      return;
+    }
+    const total = items.reduce((sum, item) => sum + item.pv, 0) || 1;
+
+    el.innerHTML = items.map((item, idx) => {
+      const ratio = Math.round((item.pv / total) * 100);
+      const subId = containerId + "-sub-" + idx;
+      const subTotal = item.pv || 1;
+      const sources = item.sources || [];
+
+      const subRows = sources.length > 0
+        ? sources.map(s => {
+            const subRatio = Math.round((s.pv / subTotal) * 100);
+            return `
+              <div class="breakdown-row breakdown-sub">
+                <div class="bd-label">${s.label || "(不明)"}</div>
+                <div class="bd-bar-wrap"><div class="bd-bar" style="width:${subRatio}%"></div></div>
+                <div class="bd-value">${s.pv.toLocaleString()} (${subRatio}%)</div>
+              </div>
+            `;
+          }).join("")
+        : '<div class="breakdown-sub-empty">参照元の内訳データなし</div>';
+
+      return `
+        <div class="breakdown-group">
+          <div class="breakdown-row breakdown-toggle" data-target="${subId}">
+            <div class="bd-label"><span class="bd-chevron">▶</span>${item.label || "(不明)"}</div>
+            <div class="bd-bar-wrap"><div class="bd-bar" style="width:${ratio}%"></div></div>
+            <div class="bd-value">${item.pv.toLocaleString()} (${ratio}%)</div>
+          </div>
+          <div class="breakdown-sub-wrap" id="${subId}" style="display:none;">${subRows}</div>
+        </div>
+      `;
+    }).join("");
+
+    el.querySelectorAll(".breakdown-toggle").forEach(rowEl => {
+      rowEl.addEventListener("click", () => {
+        const subEl = document.getElementById(rowEl.getAttribute("data-target"));
+        const chevron = rowEl.querySelector(".bd-chevron");
+        const isOpen = subEl.style.display !== "none";
+        subEl.style.display = isOpen ? "none" : "block";
+        chevron.textContent = isOpen ? "▶" : "▼";
+      });
+    });
   }
 
   function renderBreakdown(containerId, items, emptyLabel) {
