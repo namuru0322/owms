@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>記事詳細 | OWMS ダッシュボード</title>
 <!--
-  OWMS 記事詳細画面 detail.html v1.2
+  OWMS 記事詳細画面 detail.html v1.3
   index.html のランキング表「詳細」ボタンから新しいタブで開かれる。
   クエリパラメータ path（記事パス）・title（記事タイトル）・period（期間キーワード、
   index.html の「期間」プルダウンと同じ値）を受け取り、GASの type=pageDetail から
@@ -22,6 +22,15 @@
     ・バージョン番号の表示位置を、記事タイトル横 → 最上部「← このタブを閉じる」の
       右側に変更（記事タイトルが長いと見づらくなるため）。
     ・GASコード側の変更なし（v1.13のまま）。
+  変更点（v1.2 → v1.3）：
+    ・「PV・ユーザー指標」見出しの右側に期間プルダウン（当日／7日間／2週間／
+      1ヶ月／2ヶ月／3ヶ月、index.htmlの「期間」プルダウンと同じ選択肢）を追加。
+      その場で期間を変更し、GASへ再問い合わせして表示を更新できるようにした
+      （マスターシート11章②対応）。
+    ・最初に開いたときの期間は、index.htmlで「詳細」を押した時点でINDEX側が
+      表示していた期間（URLのperiodパラメータ）を引き継ぐ仕様は維持。
+    ・GASコード側の変更なし（v1.13のまま。type=pageDetailは既にstartパラメータ
+      を受け付ける実装だったため）。
 -->
 <style>
   :root {
@@ -77,6 +86,31 @@
     margin-bottom: 18px;
   }
   .section h2 { font-size: 14px; margin: 0 0 14px; color: var(--text); }
+
+  .section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .section-header-row h2 { margin: 0; }
+  .period-select-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .period-select-row select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
 
   /* --- タイムラインビジュアル（今期間／前期間、v1.1） --- */
   .timeline-bar { margin-bottom: 10px; }
@@ -156,7 +190,7 @@
 
   <div class="top-row">
     <a class="back" href="javascript:window.close();">← このタブを閉じる</a>
-    <span class="version-tag-top">v1.2</span>
+    <span class="version-tag-top">v1.3</span>
   </div>
 
   <header>
@@ -166,7 +200,20 @@
   </header>
 
   <div class="section">
-    <h2>PV・ユーザー指標（前期間比較）</h2>
+    <div class="section-header-row">
+      <h2>PV・ユーザー指標（前期間比較）</h2>
+      <div class="period-select-row">
+        <label for="periodSelect">期間</label>
+        <select id="periodSelect">
+          <option value="today">当日</option>
+          <option value="7daysAgo">7日間</option>
+          <option value="14daysAgo">2週間</option>
+          <option value="30daysAgo">1ヶ月</option>
+          <option value="60daysAgo">2ヶ月</option>
+          <option value="90daysAgo">3ヶ月</option>
+        </select>
+      </div>
+    </div>
     <div class="timeline-bar" id="timelineBar"></div>
     <div class="period-note" id="periodNote"></div>
     <div class="stat-grid" id="statGrid">
@@ -200,12 +247,24 @@
   const qs = new URLSearchParams(location.search);
   const path = qs.get("path") || "";
   const title = qs.get("title") || "";
-  const period = qs.get("period") || "7daysAgo";
 
   const PERIOD_LABELS = {
     "today": "当日", "7daysAgo": "7日間", "14daysAgo": "2週間",
     "30daysAgo": "1ヶ月", "60daysAgo": "2ヶ月", "90daysAgo": "3ヶ月", "180daysAgo": "6ヶ月"
   };
+
+  // 期間の状態。初期値はindex.htmlの「詳細」ボタンを押した時点でINDEX側が
+  // 表示していた期間（URLのperiodパラメータ）を引き継ぐ。以後はプルダウン操作で更新。
+  const periodSelect = document.getElementById("periodSelect");
+  const validPeriods = Array.from(periodSelect.options).map(o => o.value);
+  let currentPeriod = qs.get("period") || "7daysAgo";
+  if (!validPeriods.includes(currentPeriod)) currentPeriod = "7daysAgo";
+  periodSelect.value = currentPeriod;
+
+  periodSelect.addEventListener("change", () => {
+    currentPeriod = periodSelect.value;
+    loadDetail();
+  });
 
   document.getElementById("pagePath").textContent = path;
 
@@ -256,8 +315,16 @@
   }
 
   async function loadDetail() {
+    // プルダウンで期間を変更して再取得する際、古いデータが一瞬残らないようリセット
+    document.getElementById("statGrid").innerHTML = '<div class="status">読み込み中…</div>';
+    document.getElementById("channelBody").innerHTML = '<div class="status">読み込み中…</div>';
+    document.getElementById("deviceBody").innerHTML = '<div class="status">読み込み中…</div>';
+    document.getElementById("trendEmpty").textContent = "読み込み中…";
+    document.getElementById("trendEmpty").style.display = "block";
+    document.getElementById("trendSvg").style.display = "none";
+
     try {
-      const url = GAS_URL + "?type=pageDetail&path=" + encodeURIComponent(path) + "&start=" + encodeURIComponent(period);
+      const url = GAS_URL + "?type=pageDetail&path=" + encodeURIComponent(path) + "&start=" + encodeURIComponent(currentPeriod);
       const res = await fetch(url);
       const data = await res.json();
 
