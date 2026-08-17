@@ -4,12 +4,18 @@
 <meta charset="UTF-8">
 <title>記事詳細 | OWMS ダッシュボード</title>
 <!--
-  OWMS 記事詳細画面 detail.html v1.4
+  OWMS 記事詳細画面 detail.html v1.5
   index.html のランキング表「詳細」ボタンから新しいタブで開かれる。
   クエリパラメータ path（記事パス）・title（記事タイトル）・period（期間キーワード、
   index.html の「期間」プルダウンと同じ値）を受け取り、GASの type=pageDetail から
   詳細データを取得して表示する。
   対応GASコード：v1.14
+
+  変更点（v1.4 → v1.5）：
+    ・「流入元の内訳」見出しの右上に「すべて展開」ボタンを追加。個別の三角ボタンを
+      1つずつ押さなくても、このボタン1つで全チャネルグループの内訳（参照元）を
+      一括で開閉できるようにした。展開状態に応じてボタンの表示は「すべて展開」
+      ⇔「すべて閉じる」に切り替わる。データ取得や通信の仕様に変更はなし。
 
   変更点（v1.3 → v1.4）：
     ・「流入元の内訳」を2階層方式に変更。チャネルグループ（Direct／Organic Search等）
@@ -120,6 +126,16 @@
     padding: 5px 8px;
     font-size: 13px;
   }
+  .expand-all-btn {
+    background: var(--panel-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .expand-all-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 
   /* --- タイムラインビジュアル（今期間／前期間、v1.1） --- */
   .timeline-bar { margin-bottom: 10px; }
@@ -220,7 +236,7 @@
 
   <div class="top-row">
     <a class="back" href="javascript:window.close();">← このタブを閉じる</a>
-    <span class="version-tag-top">v1.4</span>
+    <span class="version-tag-top">v1.5</span>
   </div>
 
   <header>
@@ -260,7 +276,10 @@
   </div>
 
   <div class="section">
-    <h2>流入元の内訳</h2>
+    <div class="section-header-row">
+      <h2>流入元の内訳</h2>
+      <button id="channelExpandAllBtn" class="expand-all-btn" type="button">すべて展開</button>
+    </div>
     <div id="channelBody"><div class="status">読み込み中…</div></div>
   </div>
 
@@ -493,12 +512,19 @@
 
   // 「流入元の内訳」を2階層（チャネルグループ→具体的な参照元）で表示する（v1.4）。
   // データは既に1回のAPI呼び出しで取得済みのため、クリック展開時の追加通信は発生しない。
+  // 見出し右上の「すべて展開」ボタンで、全チャネルグループの内訳を一括開閉できる（v1.5）。
   function renderChannelBreakdown(containerId, items) {
     const el = document.getElementById(containerId);
+    const expandAllBtn = document.getElementById("channelExpandAllBtn");
+
     if (!items || items.length === 0) {
       el.innerHTML = '<div class="status">この期間のデータはありません</div>';
+      expandAllBtn.style.display = "none";
       return;
     }
+    expandAllBtn.style.display = "";
+    expandAllBtn.textContent = "すべて展開";
+
     const total = items.reduce((sum, item) => sum + item.pv, 0) || 1;
 
     el.innerHTML = items.map((item, idx) => {
@@ -541,6 +567,16 @@
         chevron.textContent = isOpen ? "▶" : "▼";
       });
     });
+
+    // 「すべて展開」ボタン：現在いずれかが閉じていれば全展開、全部開いていれば全て閉じる（v1.5）
+    expandAllBtn.onclick = () => {
+      const subWraps = el.querySelectorAll(".breakdown-sub-wrap");
+      const chevrons = el.querySelectorAll(".bd-chevron");
+      const anyCollapsed = Array.from(subWraps).some(w => w.style.display === "none");
+      subWraps.forEach(w => { w.style.display = anyCollapsed ? "block" : "none"; });
+      chevrons.forEach(c => { c.textContent = anyCollapsed ? "▼" : "▶"; });
+      expandAllBtn.textContent = anyCollapsed ? "すべて閉じる" : "すべて展開";
+    };
   }
 
   function renderBreakdown(containerId, items, emptyLabel) {
