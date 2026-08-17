@@ -4,12 +4,23 @@
 <meta charset="UTF-8">
 <title>記事詳細 | OWMS ダッシュボード</title>
 <!--
-  OWMS 記事詳細画面 detail.html v1.5
+  OWMS 記事詳細画面 detail.html v1.6
   index.html のランキング表「詳細」ボタンから新しいタブで開かれる。
   クエリパラメータ path（記事パス）・title（記事タイトル）・period（期間キーワード、
   index.html の「期間」プルダウンと同じ値）を受け取り、GASの type=pageDetail から
   詳細データを取得して表示する。
-  対応GASコード：v1.14
+  対応GASコード：v1.15
+
+  変更点（v1.5 → v1.6）：
+    ・最下部に「AI分析」セクションを新設。「AI分析を実行」ボタンを押すと、GASの
+      新エンドポイント type=aiAnalysis を呼び出し、ChatGPT（成一郎さん自身の
+      OpenAI APIキーを使用）による分析コメント（良い点・気になる点・次のアクション
+      案）を取得して表示する。
+    ・自動実行はせず、ボタンを押した時だけ実行するオンデマンド方式（ChatGPT APIは
+      呼び出すたびに課金されるため）。GAS側で15分キャッシュしているため、同じ
+      記事・同じ期間へ短時間に何度もボタンを押しても再課金されない。
+    ・APIキーはGAS側のスクリプトプロパティに保存されており、このファイル・
+      GitHubリポジトリには一切含まれない。
 
   変更点（v1.4 → v1.5）：
     ・「流入元の内訳」見出しの右上に「すべて展開」ボタンを追加。個別の三角ボタンを
@@ -229,6 +240,32 @@
 
   .status { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
   .period-note { color: var(--text-muted); font-size: 12px; margin-top: 0; margin-bottom: 14px; }
+
+  /* --- AI分析（v1.6） --- */
+  .ai-analysis-btn {
+    background: var(--accent-dim);
+    color: var(--text);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .ai-analysis-btn:hover { background: var(--accent); border-color: var(--accent); }
+  .ai-analysis-btn:disabled { opacity: 0.5; cursor: default; }
+  .ai-note { color: var(--text-muted); font-size: 11px; margin-top: 8px; }
+  .ai-result {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+  .ai-result.error { color: var(--down); }
+  .ai-cached-tag { color: var(--text-muted); font-size: 11px; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -236,7 +273,7 @@
 
   <div class="top-row">
     <a class="back" href="javascript:window.close();">← このタブを閉じる</a>
-    <span class="version-tag-top">v1.5</span>
+    <span class="version-tag-top">v1.6</span>
   </div>
 
   <header>
@@ -288,6 +325,13 @@
     <div id="deviceBody"><div class="status">読み込み中…</div></div>
   </div>
 
+  <div class="section">
+    <h2>AI分析</h2>
+    <button id="aiAnalysisBtn" class="ai-analysis-btn" type="button">AI分析を実行</button>
+    <div class="ai-note">ボタンを押した時だけ実行されます（ChatGPT APIは呼び出すたびに課金されるため、自動実行はしません）。</div>
+    <div id="aiResultWrap"></div>
+  </div>
+
 </div>
 
 <script>
@@ -312,8 +356,11 @@
 
   periodSelect.addEventListener("change", () => {
     currentPeriod = periodSelect.value;
+    document.getElementById("aiResultWrap").innerHTML = ""; // 期間が変わったら古い分析結果は消す（v1.6）
     loadDetail();
   });
+
+  document.getElementById("aiAnalysisBtn").addEventListener("click", loadAIAnalysis);
 
   document.getElementById("pagePath").textContent = path;
 
@@ -577,6 +624,44 @@
       chevrons.forEach(c => { c.textContent = anyCollapsed ? "▼" : "▶"; });
       expandAllBtn.textContent = anyCollapsed ? "すべて閉じる" : "すべて展開";
     };
+  }
+
+  // 「AI分析を実行」ボタンから呼ばれる。GASのtype=aiAnalysisを叩き、
+  // ChatGPTによる分析コメントを取得して表示する（v1.6、オンデマンド実行）。
+  async function loadAIAnalysis() {
+    const btn = document.getElementById("aiAnalysisBtn");
+    const wrap = document.getElementById("aiResultWrap");
+
+    btn.disabled = true;
+    btn.textContent = "分析中…";
+    wrap.innerHTML = '<div class="status">ChatGPTが分析中です…（数秒〜十数秒かかることがあります）</div>';
+
+    try {
+      const url = GAS_URL + "?type=aiAnalysis&path=" + encodeURIComponent(path) + "&start=" + encodeURIComponent(currentPeriod);
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.ok) {
+        wrap.innerHTML = '<div class="ai-result error">' + (data.error || "分析に失敗しました") + '</div>';
+      } else {
+        const cachedNote = data.cached ? '<div class="ai-cached-tag">（直近15分以内の分析結果をキャッシュから表示しています）</div>' : '';
+        wrap.innerHTML = '<div class="ai-result">' + escapeHtml(data.analysis) + '</div>' + cachedNote;
+      }
+    } catch (err) {
+      wrap.innerHTML = '<div class="ai-result error">通信エラーが発生しました</div>';
+      console.error("aiAnalysis取得失敗:", err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "AI分析を実行";
+    }
+  }
+
+  // ai-resultはwhite-space:pre-wrapでそのまま改行を活かして表示するため、
+  // ChatGPTの返答テキストはHTMLエスケープしてから挿入する
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   function renderBreakdown(containerId, items, emptyLabel) {
