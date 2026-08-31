@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.16
+  OWMS ダッシュボード v1.17
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -73,6 +73,9 @@
       付き）、流入元内訳、デバイス別内訳、日別PVミニ推移、公開日・経過日数・
       カテゴリーを確認できるようにした。
     ・GASコード側 v1.11 に対応（新エンドポイント type=pageDetail を追加）。
+  変更点（v1.16 → v1.17）：
+    ・見出し「OWMS ダッシュボード」の「OWMS」に「オウムス」のルビ（読み仮名）を
+      追加。<ruby>タグを使用、GASコード側の変更なし。
 -->
 <style>
   :root {
@@ -109,6 +112,12 @@
     font-size: 30px;
     margin: 0 0 4px;
     font-weight: normal;
+  }
+  h1 rt {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-size: 12px;
+    font-weight: normal;
+    color: var(--text-muted);
   }
   header p.sub { color: var(--text-muted); margin: 0; font-size: 14px; }
   header .version-tag {
@@ -303,7 +312,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1>OWMS ダッシュボード<span class="version-tag">v1.16</span></h1>
+  <h1><ruby>OWMS<rt>オウムス</rt></ruby> ダッシュボード<span class="version-tag">v1.17</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
