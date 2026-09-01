@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.18
+  OWMS ダッシュボード v1.19
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -81,6 +81,11 @@
       見出し「カテゴリー別アクセスランキング」を追加。プルダウン自体は右寄せに
       変更（period-barをflexのjustify-content:space-betweenで左右配置）。
       GASコード側の変更なし。
+  変更点（v1.18 → v1.19）：
+    ・「カテゴリー別アクセスランキング」見出しのフォントを、Georgia（欧文セリフ体）
+      から、上部サブタイトル「サイト全体のアクセス状況とページ別ランキング」と
+      同じ本文フォント（Hiragino Sans／Yu Gothic）に変更。サイズは18pxのまま
+      変更なし。
 -->
 <style>
   :root {
@@ -141,7 +146,7 @@
     margin: 24px 0 20px;
   }
   .period-bar h2 {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
     font-size: 18px;
     font-weight: normal;
     margin: 0;
@@ -329,7 +334,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1><ruby>OWMS<rt>オウムス</rt></ruby> ダッシュボード<span class="version-tag">v1.18</span></h1>
+  <h1><ruby>OWMS<rt>オウムス</rt></ruby> ダッシュボード<span class="version-tag">v1.19</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
