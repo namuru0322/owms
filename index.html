@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>OWMS ダッシュボード | ワンズウィルミュージックスクール</title>
 <!--
-  OWMS ダッシュボード v1.17
+  OWMS ダッシュボード v1.18
   変更点（初版 → v1.1）：
     ・タブ切替のたびにGASへ問い合わせていたのをやめ、期間変更時に一度だけ
       「全カテゴリー分」を取得し、タブ切替はブラウザ内のデータを出し分けるだけにした。
@@ -76,6 +76,11 @@
   変更点（v1.16 → v1.17）：
     ・見出し「OWMS ダッシュボード」の「OWMS」に「オウムス」のルビ（読み仮名）を
       追加。<ruby>タグを使用、GASコード側の変更なし。
+  変更点（v1.17 → v1.18）：
+    ・カテゴリー別ランキング表の直前にある「期間」プルダウンの行に、左寄せの
+      見出し「カテゴリー別アクセスランキング」を追加。プルダウン自体は右寄せに
+      変更（period-barをflexのjustify-content:space-betweenで左右配置）。
+      GASコード側の変更なし。
 -->
 <style>
   :root {
@@ -131,8 +136,20 @@
   .period-bar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
     margin: 24px 0 20px;
+  }
+  .period-bar h2 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    font-weight: normal;
+    margin: 0;
+  }
+  .period-bar .period-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   .period-bar label { font-size: 13px; color: var(--text-muted); }
   select {
@@ -312,7 +329,7 @@
 
 <header>
   <p class="eyebrow">Ones-Will Music School</p>
-  <h1><ruby>OWMS<rt>オウムス</rt></ruby> ダッシュボード<span class="version-tag">v1.17</span></h1>
+  <h1><ruby>OWMS<rt>オウムス</rt></ruby> ダッシュボード<span class="version-tag">v1.18</span></h1>
   <p class="sub">サイト全体のアクセス状況とページ別ランキング</p>
 </header>
 
@@ -352,15 +369,18 @@
 </div>
 
 <div class="period-bar">
-  <label for="period">期間</label>
-  <select id="period">
-    <option value="today">当日</option>
-    <option value="7daysAgo" selected>7日間</option>
-    <option value="14daysAgo">2週間</option>
-    <option value="30daysAgo">1ヶ月</option>
-    <option value="60daysAgo">2ヶ月</option>
-    <option value="90daysAgo">3ヶ月</option>
-  </select>
+  <h2>カテゴリー別アクセスランキング</h2>
+  <div class="period-bar-right">
+    <label for="period">期間</label>
+    <select id="period">
+      <option value="today">当日</option>
+      <option value="7daysAgo" selected>7日間</option>
+      <option value="14daysAgo">2週間</option>
+      <option value="30daysAgo">1ヶ月</option>
+      <option value="60daysAgo">2ヶ月</option>
+      <option value="90daysAgo">3ヶ月</option>
+    </select>
+  </div>
 </div>
 
 <div class="stat-row">
